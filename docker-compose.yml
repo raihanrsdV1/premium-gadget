@@ -1,0 +1,67 @@
+services:
+  # ─── PostgreSQL ──────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: pg_premium_gadget
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-premium_gadget}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-PremiumGadget2024!}
+      POSTGRES_DB: ${POSTGRES_DB:-premium_gadget}
+    ports:
+      - '5433:5432'
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./backend/src/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./backend/src/db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-premium_gadget}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Express Backend ─────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: api_premium_gadget
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-premium_gadget}:${POSTGRES_PASSWORD:-PremiumGadget2024!}@postgres:5432/${POSTGRES_DB:-premium_gadget}
+      JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_change_in_production_2024}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      CORS_ORIGIN: http://localhost:5173
+      SSLCOMMERZ_STORE_ID: ${SSLCOMMERZ_STORE_ID:-dummy}
+      SSLCOMMERZ_STORE_PASSWORD: ${SSLCOMMERZ_STORE_PASSWORD:-dummy}
+      SSLCOMMERZ_IS_SANDBOX: ${SSLCOMMERZ_IS_SANDBOX:-true}
+    ports:
+      - '5001:5000'
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  # ─── React Frontend ─────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: web_premium_gadget
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: http://localhost:5001/api/v1
+    ports:
+      - '5173:5173'
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  pg_data:
