@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Laptop, Headphones, PenTool, ShieldCheck, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent } from '../components/ui/Card';
+import { useGetFeaturedProductsQuery } from '../store/api/productApi';
 
 const SLIDES = [
   {
@@ -47,44 +48,7 @@ const SLIDES = [
   },
 ];
 
-const FEATURED_PRODUCTS = [
-  {
-    id: '1',
-    name: 'MacBook Pro 16" M3 Max',
-    slug: 'macbook-pro-16-m3',
-    price: 450000,
-    compareAtPrice: 460000,
-    image: 'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&q=80&w=600&h=600',
-    condition: 'new',
-  },
-  {
-    id: '2',
-    name: 'Dell XPS 15 OLED (Pre-Owned)',
-    slug: 'dell-xps-15-used',
-    price: 185000,
-    compareAtPrice: null,
-    image: 'https://images.unsplash.com/photo-1593642632823-8f785ba67e45?auto=format&fit=crop&q=80&w=600&h=600',
-    condition: 'used',
-  },
-  {
-    id: '3',
-    name: 'Sony WH-1000XM5',
-    slug: 'sony-wh1000xm5',
-    price: 35000,
-    compareAtPrice: 38000,
-    image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&q=80&w=600&h=600',
-    condition: 'new',
-  },
-  {
-    id: '4',
-    name: 'Asus ROG Zephyrus G14',
-    slug: 'asus-rog-g14',
-    price: 210000,
-    compareAtPrice: 225000,
-    image: 'https://images.unsplash.com/photo-1603302576837-37561b2e2302?auto=format&fit=crop&q=80&w=600&h=600',
-    condition: 'new',
-  },
-];
+const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&q=80&w=600&h=600';
 
 const HeroSlider = () => {
   const [current, setCurrent] = useState(0);
@@ -203,7 +167,11 @@ const HeroSlider = () => {
   );
 };
 
-const Home = () => (
+const Home = () => {
+  const navigate = useNavigate();
+  const { data: featuredData } = useGetFeaturedProductsQuery();
+  const featuredProducts = featuredData?.data || [];
+  return (
   <div className="flex flex-col min-h-screen">
 
     <HeroSlider />
@@ -277,35 +245,38 @@ const Home = () => (
           <h2 className="text-3xl font-bold tracking-tight text-center md:text-left">Featured Products</h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {FEATURED_PRODUCTS.map(product => (
-            <Card key={product.id} className="group overflow-hidden border-border/50 hover:border-primary/30 transition-all hover:shadow-lg flex flex-col">
+          {featuredProducts.map(product => (
+            <Card
+              key={product.id}
+              onClick={() => navigate(`/products/${product.slug}`)}
+              className="group overflow-hidden border-border/50 hover:border-primary/30 transition-all hover:shadow-lg flex flex-col cursor-pointer"
+            >
               <div className="relative aspect-square overflow-hidden bg-white p-4">
-                {product.condition === 'used' && (
+                {(product.condition === 'used' || product.condition === 'Pre-Owned') && (
                   <span className="absolute top-2 left-2 z-10 rounded-full bg-orange-100 text-orange-700 px-2 py-0.5 text-xs font-semibold">
                     Pre-Owned
                   </span>
                 )}
                 <img
-                  src={product.image}
+                  src={product.image || FALLBACK_IMAGE}
                   alt={product.name}
+                  onError={e => { e.target.src = FALLBACK_IMAGE; }}
                   className="object-contain w-full h-full transition-transform duration-500 group-hover:scale-105"
                 />
               </div>
               <CardContent className="p-5 flex-1 flex flex-col pt-4">
-                <h3 className="font-semibold line-clamp-2 mb-2 group-hover:text-primary transition-colors">
-                  <Link to={`/products/${product.slug}`}>{product.name}</Link>
-                </h3>
+                <h3 className="font-semibold line-clamp-2 mb-2 group-hover:text-primary transition-colors">{product.name}</h3>
                 <div className="mt-auto pt-4">
-                  <span className="text-lg font-bold text-foreground">৳{product.price.toLocaleString()}</span>
-                  {product.compareAtPrice && (
+                  <span className="text-lg font-bold text-foreground">৳{Number(product.price).toLocaleString()}</span>
+                  {product.compare_at_price && (
                     <span className="ml-2 text-sm text-muted-foreground line-through">
-                      ৳{product.compareAtPrice.toLocaleString()}
+                      ৳{Number(product.compare_at_price).toLocaleString()}
                     </span>
                   )}
                 </div>
               </CardContent>
               <div className="px-5 pb-5">
-                <Button className="w-full" variant="secondary">Add to Cart</Button>
+                <Button className="w-full" variant="secondary" onClick={e => e.stopPropagation()}>Add to Cart</Button>
               </div>
             </Card>
           ))}
@@ -333,6 +304,7 @@ const Home = () => (
     </section>
 
   </div>
-);
+  );
+};
 
 export default Home;
