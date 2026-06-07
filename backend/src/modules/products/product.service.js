@@ -1,4 +1,4 @@
-const { query } = require('../../config/database');
+const { query, withTransaction } = require('../../config/database');
 const ApiError = require('../../utils/ApiError');
 const { parsePagination, paginatedResponse } = require('../../utils/pagination');
 
@@ -35,8 +35,14 @@ const getAll = async (queryParams) => {
   const extraFilters = [];
 
   if (category) {
+    // Match the category itself OR any of its direct child categories, so a
+    // parent like "laptops" returns products filed under "macbooks" /
+    // "windows-laptops". (One level deep, which covers the current taxonomy.)
     params.push(category);
-    extraFilters.push(`c.slug = $${params.length}`);
+    const n = params.length;
+    extraFilters.push(
+      `(c.slug = $${n} OR c.parent_id = (SELECT id FROM categories WHERE slug = $${n}))`
+    );
   }
   if (brand) {
     params.push(brand);
@@ -91,26 +97,38 @@ const search = async (queryParams) => {
     return paginatedResponse([], 0, { page, limit });
   }
 
-  const term = `%${q.trim()}%`;
+  // $1 = raw term (trigram word-similarity, typo-tolerant, uses the
+  //      idx_products_name_trgm GIN index via the <% operator)
+  // $2 = %term% (substring ILIKE fallback for brand / short_description and
+  //      very short queries below the trigram threshold)
+  const term = q.trim();
+  const like = `%${term}%`;
+  const matchClause = `($1 <% p.name OR p.name ILIKE $2 OR b.name ILIKE $2 OR p.short_description ILIKE $2)`;
+
   const dataSql = `
     ${PRODUCT_LIST_SELECT}
-      AND (p.name ILIKE $1 OR b.name ILIKE $1 OR p.short_description ILIKE $1)
+      AND ${matchClause}
     GROUP BY p.id, p.name, p.slug, p.short_description, p.is_featured, p.condition, b.name, b.slug
-    ORDER BY p.name ASC
-    LIMIT $2 OFFSET $3
+    ORDER BY word_similarity($1, p.name) DESC, p.name ASC
+    LIMIT $3 OFFSET $4
   `;
   const countSql = `
     SELECT COUNT(DISTINCT p.id)
     FROM products p
     LEFT JOIN brands b ON b.id = p.brand_id
     WHERE p.is_active = TRUE AND p.deleted_at IS NULL
-      AND (p.name ILIKE $1 OR b.name ILIKE $1 OR p.short_description ILIKE $1)
+      AND ${matchClause}
   `;
 
-  const [data, count] = await Promise.all([
-    query(dataSql, [term, limit, offset]),
-    query(countSql, [term]),
-  ]);
+  // Lower the trigram word-similarity threshold (default 0.6) so common typos
+  // still match. SET LOCAL is scoped to this transaction only, so it never
+  // leaks onto a pooled connection.
+  const [data, count] = await withTransaction(async (client) => {
+    await client.query("SET LOCAL pg_trgm.word_similarity_threshold = 0.3");
+    const d = await client.query(dataSql, [term, like, limit, offset]);
+    const c = await client.query(countSql, [term, like]);
+    return [d, c];
+  });
 
   return paginatedResponse(data.rows, parseInt(count.rows[0].count, 10), { page, limit });
 };

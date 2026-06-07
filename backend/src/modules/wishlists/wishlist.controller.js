@@ -1,29 +1,19 @@
 const asyncHandler = require('../../utils/asyncHandler');
 const service = require('./wishlist.service');
 
-const getAll = asyncHandler(async (req, res) => {
-  const result = await service.getAll(req.query);
-  res.json({ success: true, ...result });
-});
-
-const getById = asyncHandler(async (req, res) => {
-  const result = await service.getById(req.params.id);
+const getMine = asyncHandler(async (req, res) => {
+  const result = await service.getMine(req.user);
   res.json({ success: true, data: result });
 });
 
-const create = asyncHandler(async (req, res) => {
-  const result = await service.create(req.body);
+const add = asyncHandler(async (req, res) => {
+  const result = await service.add(req.user, req.validatedBody.product_id);
   res.status(201).json({ success: true, data: result });
 });
 
-const update = asyncHandler(async (req, res) => {
-  const result = await service.update(req.params.id, req.body);
-  res.json({ success: true, data: result });
-});
-
 const remove = asyncHandler(async (req, res) => {
-  await service.remove(req.params.id);
-  res.json({ success: true, message: 'Deleted successfully' });
+  await service.remove(req.user, req.params.productId);
+  res.json({ success: true, message: 'Removed from wishlist' });
 });
 
-module.exports = { getAll, getById, create, update, remove };
+module.exports = { getMine, add, remove };

@@ -17,7 +17,7 @@ const create = asyncHandler(async (req, res) => {
 });
 
 const update = asyncHandler(async (req, res) => {
-  const result = await service.update(req.params.id, req.body);
+  const result = await service.update(req.params.id, req.validatedBody, req.user);
   res.json({ success: true, data: result });
 });
 

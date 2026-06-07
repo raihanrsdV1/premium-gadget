@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const controller = require('./pos.controller');
+const { createPOSSaleSchema, validate } = require('./pos.validation');
 const { authenticate, authorize, requirePhoneVerified } = require('../auth/auth.middleware');
 
 const router = Router();
@@ -8,7 +9,7 @@ const router = Router();
 router.use(authenticate, authorize('super_admin', 'branch_admin'));
 
 // Create a walk-in sale
-router.post('/sales', controller.createSale);
+router.post('/sales', validate(createPOSSaleSchema), controller.createSale);
 
 // List POS sales
 router.get('/sales', controller.getSales);
