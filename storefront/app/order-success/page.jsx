@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import OrderSuccessView from "@/components/orders/OrderSuccessView";
 
 export const metadata = {
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function OrderSuccessPage() {
-  return <OrderSuccessView />;
+  return (
+    <Suspense fallback={null}>
+      <OrderSuccessView />
+    </Suspense>
+  );
 }

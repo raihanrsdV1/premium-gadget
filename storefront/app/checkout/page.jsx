@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import CheckoutView from "@/components/checkout/CheckoutView";
 
 export const metadata = {
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function CheckoutPage() {
-  return <CheckoutView />;
+  return (
+    <Suspense fallback={null}>
+      <CheckoutView />
+    </Suspense>
+  );
 }

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { getProducts } from "@/lib/api/products";
 import ProductCard from "@/components/product/ProductCard";
@@ -101,7 +102,9 @@ export default async function ProductListPage({ searchParams }) {
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
-        <ProductFilters />
+        <Suspense fallback={null}>
+          <ProductFilters />
+        </Suspense>
 
         {/* Product Grid */}
         <div className="flex-1 min-w-0">
