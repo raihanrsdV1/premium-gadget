@@ -36,7 +36,22 @@ export async function apiFetch(path, { method = "GET", body, auth = false } = {}
   }
 
   if (!res.ok) {
-    const err = new Error(json?.message || `Request failed (${res.status})`);
+    const message = json?.message || `Request failed (${res.status})`;
+    // Surface API errors in the console for debuggability.
+    console.error(`API ${method} ${path} → ${res.status}: ${message}`);
+
+    // A 401 on an authenticated request means a stale/expired token — clear it
+    // and bounce to login (mirrors the legacy axios interceptor) so the user
+    // isn't wedged "logged in" with an invalid token.
+    if (res.status === 401 && auth && typeof window !== "undefined") {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.href = `/login?session=expired`;
+      }
+    }
+
+    const err = new Error(message);
     err.status = res.status;
     err.data = json;
     throw err;

@@ -20,18 +20,28 @@ function recompute(state) {
   state.totalAmount = state.items.reduce((sum, i) => sum + i.totalPrice, 0);
 }
 
+// Clamp a desired quantity to [1, maxStock] (maxStock falsy = no client cap;
+// the backend reservation is always the authoritative check).
+function clampQty(qty, maxStock) {
+  const q = Math.max(1, qty);
+  return maxStock ? Math.min(q, maxStock) : q;
+}
+
 const cartSlice = createSlice({
   name: "cart",
   initialState,
   reducers: {
     addItem(state, action) {
-      const { id, name, price, image, slug, variantName, quantity = 1 } =
+      const { id, name, price, image, slug, variantName, quantity = 1, maxStock } =
         action.payload;
       const existing = state.items.find((i) => i.id === id);
       if (existing) {
-        existing.quantity += quantity;
+        // Keep the freshest stock figure if provided.
+        if (maxStock != null) existing.maxStock = maxStock;
+        existing.quantity = clampQty(existing.quantity + quantity, existing.maxStock);
         existing.totalPrice = existing.quantity * existing.price;
       } else {
+        const qty = clampQty(quantity, maxStock);
         state.items.push({
           id,
           name,
@@ -39,8 +49,9 @@ const cartSlice = createSlice({
           image: image || "",
           slug: slug || "",
           variantName: variantName || "",
-          quantity,
-          totalPrice: price * quantity,
+          maxStock: maxStock ?? null,
+          quantity: qty,
+          totalPrice: price * qty,
         });
       }
       recompute(state);
@@ -67,7 +78,7 @@ const cartSlice = createSlice({
       const { id, quantity } = action.payload;
       const existing = state.items.find((i) => i.id === id);
       if (!existing) return;
-      existing.quantity = Math.max(1, quantity);
+      existing.quantity = clampQty(quantity, existing.maxStock);
       existing.totalPrice = existing.quantity * existing.price;
       recompute(state);
     },

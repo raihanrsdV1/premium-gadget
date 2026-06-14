@@ -46,7 +46,21 @@ export default function ProductDetailView({ product }) {
     : null;
   const description = product.description || product.description_md;
 
+  // Available stock for the selected variant (added to the API response).
+  const available = Number(activeVariant?.available ?? 0);
+  const outOfStock = available <= 0;
+  const lowStock = available > 0 && available <= 5;
+  const effectiveQty = Math.min(qty, Math.max(available, 1));
+
+  // Switching variant: reset quantity so we never carry a qty above the new
+  // variant's stock.
+  const selectVariant = (v) => {
+    setSelectedVariant(v);
+    setQty(1);
+  };
+
   const handleAddToCart = () => {
+    if (outOfStock) return;
     dispatch(
       addItem({
         id: activeVariant?.id || product.id,
@@ -55,7 +69,8 @@ export default function ProductDetailView({ product }) {
         image: product.images?.[0] || "",
         slug: product.slug,
         variantName: activeVariant?.variant_name || "",
-        quantity: qty,
+        quantity: effectiveQty,
+        maxStock: available,
       })
     );
     setAdded(true);
@@ -125,12 +140,23 @@ export default function ProductDetailView({ product }) {
             <p className="text-lg text-muted-foreground mb-6 leading-relaxed">{product.short_description}</p>
           )}
 
-          <div className="text-4xl font-bold mb-8">
+          <div className="text-4xl font-bold mb-3">
             ৳{price.toLocaleString()}
             {compareAt && (
               <span className="text-xl text-muted-foreground line-through ml-3 font-medium">
                 ৳{compareAt.toLocaleString()}
               </span>
+            )}
+          </div>
+
+          {/* Stock indicator */}
+          <div className="mb-8 text-sm font-medium">
+            {outOfStock ? (
+              <span className="text-destructive">Out of stock</span>
+            ) : lowStock ? (
+              <span className="text-orange-600">Only {available} left in stock</span>
+            ) : (
+              <span className="text-green-600">In stock</span>
             )}
           </div>
 
@@ -150,7 +176,7 @@ export default function ProductDetailView({ product }) {
                           const v =
                             variants.find((v) => v.color === color && v.attributes?.Storage === activeVariant?.attributes?.Storage) ||
                             variants.find((v) => v.color === color);
-                          if (v) setSelectedVariant(v);
+                          if (v) selectVariant(v);
                         }}
                         className={`px-4 py-2 text-sm font-medium rounded-md border transition-all ${activeVariant?.color === color ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-input hover:border-foreground/50"}`}
                       >
@@ -173,7 +199,7 @@ export default function ProductDetailView({ product }) {
                         <button
                           key={storage}
                           disabled={!match}
-                          onClick={() => match && setSelectedVariant(match)}
+                          onClick={() => match && selectVariant(match)}
                           className={`px-4 py-2 text-sm font-medium rounded-md border transition-all ${!match ? "opacity-40 cursor-not-allowed bg-muted" : isSelected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-input hover:border-foreground/50"}`}
                         >
                           {storage}
@@ -189,12 +215,26 @@ export default function ProductDetailView({ product }) {
           {/* Qty + Add to Cart */}
           <div className="flex gap-4 mb-8">
             <div className="flex w-32 border rounded-md overflow-hidden">
-              <button onClick={() => setQty((q) => Math.max(1, q - 1))} className="flex-1 hover:bg-muted font-bold text-lg">−</button>
-              <div className="flex-1 flex items-center justify-center font-medium border-x">{qty}</div>
-              <button onClick={() => setQty((q) => q + 1)} className="flex-1 hover:bg-muted font-bold text-lg">+</button>
+              <button
+                onClick={() => setQty((q) => Math.max(1, q - 1))}
+                disabled={outOfStock || effectiveQty <= 1}
+                className="flex-1 hover:bg-muted font-bold text-lg disabled:opacity-40 disabled:pointer-events-none"
+              >
+                −
+              </button>
+              <div className="flex-1 flex items-center justify-center font-medium border-x">{effectiveQty}</div>
+              <button
+                onClick={() => setQty((q) => Math.min(available, q + 1))}
+                disabled={outOfStock || effectiveQty >= available}
+                className="flex-1 hover:bg-muted font-bold text-lg disabled:opacity-40 disabled:pointer-events-none"
+              >
+                +
+              </button>
             </div>
-            <Button size="lg" className="flex-1 text-base font-semibold" onClick={handleAddToCart}>
-              {added ? (
+            <Button size="lg" className="flex-1 text-base font-semibold" onClick={handleAddToCart} disabled={outOfStock}>
+              {outOfStock ? (
+                "Out of Stock"
+              ) : added ? (
                 <><Check className="mr-2 h-5 w-5" /> Added!</>
               ) : (
                 <><ShoppingCart className="mr-2 h-5 w-5" /> Add to Cart</>

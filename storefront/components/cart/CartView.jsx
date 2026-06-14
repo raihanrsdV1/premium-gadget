@@ -64,22 +64,28 @@ export default function CartView() {
                   </div>
 
                   <div className="mt-auto flex items-center justify-between pt-4">
-                    <div className="flex items-center border rounded-md h-9">
-                      <button
-                        className="px-3 h-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                        onClick={() => dispatch(removeItem(item.id))}
-                        aria-label="Decrease quantity"
-                      >
-                        <Minus className="h-4 w-4" />
-                      </button>
-                      <span className="w-10 text-center text-sm font-medium">{item.quantity}</span>
-                      <button
-                        className="px-3 h-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                        onClick={() => dispatch(setQuantity({ id: item.id, quantity: item.quantity + 1 }))}
-                        aria-label="Increase quantity"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center border rounded-md h-9 w-fit">
+                        <button
+                          className="px-3 h-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() => dispatch(removeItem(item.id))}
+                          aria-label="Decrease quantity"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <span className="w-10 text-center text-sm font-medium">{item.quantity}</span>
+                        <button
+                          className="px-3 h-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                          onClick={() => dispatch(setQuantity({ id: item.id, quantity: item.quantity + 1 }))}
+                          disabled={item.maxStock != null && item.quantity >= item.maxStock}
+                          aria-label="Increase quantity"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                      {item.maxStock != null && item.quantity >= item.maxStock && (
+                        <span className="text-xs text-orange-600">Max available: {item.maxStock}</span>
+                      )}
                     </div>
 
                     <Button

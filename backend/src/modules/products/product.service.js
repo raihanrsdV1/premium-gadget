@@ -151,12 +151,13 @@ const getBySlug = async (slug) => {
   if (!prodResult.rows.length) throw ApiError.notFound('Product not found');
   const product = prodResult.rows[0];
 
-  // 2. Variants
+  // 2. Variants (with available stock = SUM(quantity - reserved) across branches)
   const varResult = await query(
-    `SELECT id, sku, variant_name, color, price, compare_at_price, is_active
-     FROM product_variants
-     WHERE product_id = $1 AND is_active = TRUE
-     ORDER BY price ASC`,
+    `SELECT pv.id, pv.sku, pv.variant_name, pv.color, pv.price, pv.compare_at_price, pv.is_active,
+            COALESCE((SELECT SUM(i.quantity - i.reserved) FROM inventory i WHERE i.variant_id = pv.id), 0)::int AS available
+     FROM product_variants pv
+     WHERE pv.product_id = $1 AND pv.is_active = TRUE
+     ORDER BY pv.price ASC`,
     [product.id]
   );
   const variants = varResult.rows;
@@ -195,7 +196,8 @@ const getBySlug = async (slug) => {
 
 const getVariants = async (productId) => {
   const result = await query(
-    `SELECT pv.id, pv.sku, pv.variant_name, pv.color, pv.price, pv.compare_at_price
+    `SELECT pv.id, pv.sku, pv.variant_name, pv.color, pv.price, pv.compare_at_price,
+            COALESCE((SELECT SUM(i.quantity - i.reserved) FROM inventory i WHERE i.variant_id = pv.id), 0)::int AS available
      FROM product_variants pv
      WHERE pv.product_id = $1 AND pv.is_active = TRUE
      ORDER BY pv.price ASC`,

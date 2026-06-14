@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useSelector } from "react-redux";
-import { ShieldCheck, MapPin, CreditCard, ChevronRight, Construction } from "lucide-react";
+import { ShieldCheck, MapPin, CreditCard, ChevronRight, ChevronLeft, AlertCircle, Loader2, Info, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent } from "@/components/ui/Card";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { createOrder } from "@/lib/api/orders";
 
 // Ported from frontend/src/pages/CheckoutPage.jsx.
 // UI + cart→order payload only. The actual order SUBMISSION (two-phase
@@ -15,6 +17,9 @@ import { useRequireAuth } from "@/hooks/useRequireAuth";
 // is intentionally left as a visible TODO — no fake success.
 export default function CheckoutView() {
   const ready = useRequireAuth();
+  const router = useRouter();
+  const params = useSearchParams();
+  const paymentReturn = params.get("payment"); // 'failed' | 'cancelled' after a gateway return
   const { items, totalAmount } = useSelector((state) => state.cart);
   const { user } = useSelector((state) => state.auth);
 
@@ -22,53 +27,114 @@ export default function CheckoutView() {
   const [shippingMethod, setShippingMethod] = useState("inside_dhaka");
   const [address, setAddress] = useState({ full_name: "", phone: "", division: "", district: "", street: "" });
   const [couponCode, setCouponCode] = useState("");
-  const [assembledPayload, setAssembledPayload] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [placedPending, setPlacedPending] = useState(null); // order placed but gateway URL unavailable
+  // Popup shown when returning from the gateway after a failed/cancelled payment.
+  const [paymentModal, setPaymentModal] = useState(paymentReturn);
+
+  const dismissPaymentModal = () => {
+    setPaymentModal(null);
+    router.replace("/checkout", { scroll: false }); // drop ?payment= so reload won't re-show
+  };
 
   const shippingFee = shippingMethod === "inside_dhaka" ? 100 : 200;
   const grandTotal = totalAmount + shippingFee;
 
   if (!ready) return null;
 
-  if (items.length === 0 && !assembledPayload) {
+  if (items.length === 0 && !placedPending) {
     return (
       <div className="container px-4 py-24 text-center">
         <h1 className="text-2xl font-semibold mb-3">Your cart is empty</h1>
-        <p className="text-muted-foreground mb-8">Add some products before checking out.</p>
+        <p className="text-muted-foreground mb-8">
+          {paymentReturn === "cancelled"
+            ? "Your payment was cancelled and the order was released."
+            : paymentReturn === "failed"
+            ? "Your payment could not be completed and the order was released."
+            : "Add some products before checking out."}
+        </p>
         <Link href="/products"><Button size="lg">Browse Products</Button></Link>
       </div>
     );
   }
 
-  const handlePlaceOrder = (e) => {
+  const handlePlaceOrder = async (e) => {
     e.preventDefault();
-    // Assemble the cart → order payload consistent with the order model.
-    // NOTE: cart line ids are variant ids for items added from the product
-    // detail page; items added from listing cards currently store the product
-    // id (a known gap to resolve when wiring submission / default-variant pick).
+    setError("");
+    setSubmitting(true);
+    // Cart line ids are always variant_ids (enforced at add time).
     const payload = {
       items: items.map((i) => ({ variant_id: i.id, quantity: i.quantity })),
-      address_id: null, // TODO: persist/select a saved address and use its id
-      shipping_address: address, // collected here until addresses API exists
       shipping_method: shippingMethod,
-      shipping_fee: shippingFee,
+      shipping_address: address,
       coupon_code: couponCode.trim() || undefined,
-      payment_method: "sslcommerz",
+      payment_method: "card",
     };
-    // TODO(checkout-submission): POST to the two-phase reserve→confirm flow
-    // (order.service.create + SSLCommerz initiate) once that backend phase ships.
-    // Intentionally NOT submitting or faking success here.
-    setAssembledPayload(payload);
+    try {
+      const result = await createOrder(payload);
+      if (result?.redirect_url) {
+        // Hand off to the SSLCommerz gateway. The cart is cleared on the
+        // confirmation page after a validated payment.
+        window.location.href = result.redirect_url;
+        return;
+      }
+      // Order placed (pending, reserved) but no gateway session — surface it
+      // honestly rather than faking success.
+      setPlacedPending(result);
+    } catch (err) {
+      setError(err.data?.message || "Could not place your order. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <div className="bg-secondary/20 min-h-[80vh] py-8">
+      {/* Payment failed/cancelled popup (on return from the gateway) */}
+      {paymentModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={dismissPaymentModal}>
+          <div className="bg-background rounded-xl p-6 max-w-sm w-full text-center shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="w-14 h-14 rounded-full bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center mx-auto mb-4">
+              <XCircle className="h-8 w-8 text-amber-600" />
+            </div>
+            <h3 className="text-xl font-bold mb-2">
+              {paymentModal === "cancelled" ? "Payment cancelled" : "Payment failed"}
+            </h3>
+            <p className="text-muted-foreground text-sm mb-6">
+              {paymentModal === "cancelled"
+                ? "You cancelled the payment, so no charge was made."
+                : "Your payment couldn’t be completed, so no charge was made."}{" "}
+              Your order was released and the items are back in your cart — you can review and try again.
+            </p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => { dismissPaymentModal(); router.push("/cart"); }}>
+                Back to Cart
+              </Button>
+              <Button className="flex-1" onClick={dismissPaymentModal}>
+                Try Again
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="container px-4">
-        {/* Stepper */}
+        {/* Back to cart — editable at any time */}
+        <Link href="/cart" className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground mb-6">
+          <ChevronLeft className="h-4 w-4 mr-1" /> Back to cart
+        </Link>
+
+        {/* Stepper (Delivery is clickable to go back and edit) */}
         <div className="flex items-center justify-center space-x-2 sm:space-x-4 mb-10 text-sm font-medium">
-          <div className={`flex items-center ${step >= 1 ? "text-primary" : "text-muted-foreground"}`}>
+          <button
+            type="button"
+            onClick={() => setStep(1)}
+            className={`flex items-center ${step >= 1 ? "text-primary" : "text-muted-foreground"} ${step > 1 ? "hover:underline cursor-pointer" : ""}`}
+          >
             <div className={`w-6 h-6 rounded-full flex items-center justify-center mr-2 text-xs text-white ${step >= 1 ? "bg-primary" : "bg-muted-foreground"}`}>1</div>
             Delivery
-          </div>
+          </button>
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
           <div className={`flex items-center ${step >= 2 ? "text-primary" : "text-muted-foreground"}`}>
             <div className={`w-6 h-6 rounded-full flex items-center justify-center mr-2 text-xs text-white ${step >= 2 ? "bg-primary" : "bg-muted-foreground"}`}>2</div>
@@ -191,18 +257,26 @@ export default function CheckoutView() {
               </CardContent>
             </Card>
 
-            {/* Submission TODO state — explicitly NOT a fake success */}
-            {assembledPayload && (
-              <Card className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
+            {error && (
+              <Card className="border-destructive/40 bg-destructive/5">
+                <CardContent className="p-4 flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Order placed but the payment gateway session wasn't available */}
+            {placedPending && (
+              <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/20">
                 <CardContent className="p-6">
-                  <div className="flex items-center gap-2 mb-3 text-amber-700 dark:text-amber-400">
-                    <Construction className="h-5 w-5" />
-                    <h3 className="font-bold">Checkout submission not yet wired</h3>
+                  <div className="flex items-center gap-2 mb-2 text-blue-700 dark:text-blue-400">
+                    <Info className="h-5 w-5" />
+                    <h3 className="font-bold">Order placed — payment pending</h3>
                   </div>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Order submission (two-phase reserve→confirm + SSLCommerz) is a separate, deferred phase. No order was created and no payment was taken. The cart→order payload below was assembled and is ready for that phase:
+                  <p className="text-sm text-muted-foreground">
+                    Your order <span className="font-semibold text-foreground">#{placedPending.order_number}</span> was placed and stock reserved, but the payment gateway is currently unavailable, so no payment was taken. You can view it under{" "}
+                    <Link href="/orders" className="text-primary underline">My Orders</Link>.
                   </p>
-                  <pre className="text-xs bg-background border rounded-md p-3 overflow-x-auto">{JSON.stringify(assembledPayload, null, 2)}</pre>
                 </CardContent>
               </Card>
             )}
@@ -212,7 +286,10 @@ export default function CheckoutView() {
           <div className="lg:col-span-1">
             <Card className="sticky top-24 border-border/50">
               <CardContent className="p-6">
-                <h2 className="text-lg font-bold mb-4 border-b pb-4">Your Order</h2>
+                <div className="flex items-center justify-between mb-4 border-b pb-4">
+                  <h2 className="text-lg font-bold">Your Order</h2>
+                  <Link href="/cart" className="text-xs font-medium text-primary hover:underline">Edit cart</Link>
+                </div>
                 <div className="space-y-4 mb-6 max-h-[300px] overflow-y-auto pr-2">
                   {items.map((item) => (
                     <div key={item.id} className="flex justify-between text-sm">
@@ -238,8 +315,8 @@ export default function CheckoutView() {
                     <span className="text-primary">৳{grandTotal.toLocaleString()}</span>
                   </div>
                 </div>
-                <Button size="lg" className="w-full text-base font-bold" disabled={step !== 2} onClick={handlePlaceOrder}>
-                  Place Order
+                <Button size="lg" className="w-full text-base font-bold" disabled={step !== 2 || submitting} onClick={handlePlaceOrder}>
+                  {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Placing Order…</> : "Place Order"}
                 </Button>
                 <div className="flex items-center justify-center mt-6 text-xs text-muted-foreground">
                   <ShieldCheck className="h-4 w-4 mr-1.5" /> 256-bit SSL encryption

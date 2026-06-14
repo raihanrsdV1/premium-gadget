@@ -11,8 +11,8 @@
 --     psql -U premium_gadget -d premium_gadget \
 --     < backend/src/db/migrations/001_inventory_audit_and_snapshots.sql
 -- ============================================================
-
-BEGIN;
+-- NOTE: transaction is managed by the migration runner (scripts/migrate.js);
+-- this file contains plain statements only.
 
 -- ─── Extensions ──────────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS pg_trgm;   -- fuzzy / trigram search
@@ -111,8 +111,6 @@ $$;
 -- ─── Fuzzy product-name search ──────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_products_name_trgm
     ON products USING gin (name gin_trgm_ops);
-
-COMMIT;
 
 -- ============================================================
 -- End of migration 001

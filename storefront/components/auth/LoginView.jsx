@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useDispatch } from "react-redux";
 import { ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -18,6 +18,7 @@ export default function LoginView() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const dispatch = useDispatch();
+  const sessionExpired = useSearchParams().get("session") === "expired";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -67,6 +68,13 @@ export default function LoginView() {
             <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
             <p className="text-sm text-muted-foreground">Enter your phone and password to sign in</p>
           </div>
+
+          {sessionExpired && !error && (
+            <div className="flex items-center gap-2 rounded-md border border-amber-400/50 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              Your session expired. Please sign in again.
+            </div>
+          )}
 
           {error && (
             <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">

@@ -26,6 +26,15 @@ const config = {
     validationUrl: process.env.SSLCOMMERZ_VALIDATION_URL || 'https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php',
   },
 
+  // Public base URLs used to build SSLCommerz callback URLs and the final
+  // browser redirect back to the storefront.
+  urls: {
+    // Where the gateway POSTs success/fail/cancel/ipn (browser-reachable API base).
+    serverPublic: process.env.SERVER_PUBLIC_URL || 'http://localhost:5001/api/v1',
+    // Where the user's browser is sent after the payment is settled.
+    storefront: process.env.STOREFRONT_URL || 'http://localhost:3000',
+  },
+
   sms: {
     apiKey: process.env.SMS_API_KEY,
     senderId: process.env.SMS_SENDER_ID || 'PremiumGadget',

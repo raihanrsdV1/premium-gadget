@@ -2,18 +2,20 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useDispatch } from "react-redux";
 import { Heart, ShoppingCart, Trash2, ArrowRight, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
-import { addItem } from "@/store/slices/cartSlice";
+import { addProductToCart } from "@/lib/cart";
 import { getWishlist, removeFromWishlist } from "@/lib/api/wishlist";
 
 // Replaces the legacy mock Wishlist with the real (Phase 3) backend endpoints.
 export default function WishlistView() {
   const ready = useRequireAuth();
   const dispatch = useDispatch();
+  const router = useRouter();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -39,18 +41,15 @@ export default function WishlistView() {
     }
   };
 
-  const handleAddToCart = (item) => {
-    dispatch(
-      addItem({
-        id: item.product_id,
-        name: item.name,
-        price: Number(item.price) || 0,
-        image: item.image || "",
-        slug: item.slug || "",
-        quantity: 1,
-      })
+  const handleAddToCart = async (item) => {
+    // Resolve to a variant_id (single-variant adds directly; multi-variant
+    // routes to the product page to choose).
+    const result = await addProductToCart(
+      { productId: item.product_id, slug: item.slug, name: item.name, image: item.image },
+      dispatch,
+      router
     );
-    handleRemove(item.product_id);
+    if (result === "added") handleRemove(item.product_id);
   };
 
   if (!ready || loading) {

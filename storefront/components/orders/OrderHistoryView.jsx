@@ -124,6 +124,11 @@ export default function OrderHistoryView() {
                       <span className="text-muted-foreground">Total: </span>
                       <span className="font-bold text-base">{formatCurrency(total)}</span>
                     </div>
+                    <Link href={`/orders/${number}`}>
+                      <Button variant="ghost" size="sm" className="text-primary hover:text-primary">
+                        View details <ChevronRight className="ml-1 h-4 w-4" />
+                      </Button>
+                    </Link>
                   </div>
                 </CardContent>
               </Card>

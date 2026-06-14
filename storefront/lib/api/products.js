@@ -54,6 +54,17 @@ export async function getFeaturedProducts() {
 }
 
 /**
+ * Fetch the active variants for a product.
+ * @returns {Promise<object[]>} [{ id, sku, variant_name, color, price, compare_at_price }]
+ */
+export async function getVariants(productId) {
+  const res = await apiGet(`/products/${productId}/variants`);
+  if (!res.ok) throw new Error(`Failed to fetch variants: ${res.status}`);
+  const json = await res.json();
+  return json?.data ?? [];
+}
+
+/**
  * Search products by query (trigram fuzzy search on the backend).
  * @returns {Promise<{ data: object[], pagination: object|null }>}
  */
