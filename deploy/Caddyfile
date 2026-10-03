@@ -1,0 +1,36 @@
+# Public HTTPS entry point for the API. Caddy obtains and renews the TLS
+# certificate for $API_DOMAIN automatically (the DNS A record must point at the
+# droplet and ports 80/443 must be open).
+#
+# Behind Cloudflare's proxy (orange cloud), set TRUSTED_PROXIES in .env to
+# Cloudflare's ranges (https://www.cloudflare.com/ips/), space-separated, and
+# TRUST_PROXY=2 — otherwise every visitor appears as a Cloudflare edge IP and
+# shares one rate-limit bucket. Default: only private ranges are trusted.
+{
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES:private_ranges}
+	}
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+
+	# Only the API is exposed.
+	@api path /api/* /uploads/*
+	handle @api {
+		reverse_proxy backend:5000
+	}
+	handle {
+		respond "Not found" 404
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

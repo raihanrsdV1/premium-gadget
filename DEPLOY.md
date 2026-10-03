@@ -2,177 +2,140 @@
 
 ## Architecture
 
-- **Backend + Postgres** → a single DigitalOcean droplet, via Docker Compose.
-- **Storefront (Next.js)** → Vercel (separate, git-integrated).
-- **Auto-deploy**: push to `main` → GitHub Actions SSHes into the droplet → syncs code → rebuilds → runs DB migrations → restarts the backend. Vercel auto-builds the storefront from the same push.
+| Piece | Where | How it deploys |
+|---|---|---|
+| **API + Postgres** | DigitalOcean droplet, Docker Compose (`docker-compose.yml`) | Push to `main`, GitHub Actions runs the tests, then SSH → `deploy/deploy.sh` |
+| **HTTPS** | Caddy container on the droplet (automatic Let's Encrypt for `API_DOMAIN`) | Part of the compose stack |
+| **Storefront** (Next.js, `storefront/`) | Vercel | Vercel git integration, Root Directory = `storefront` |
+| **Product images** | Cloudflare R2 (public bucket) | Uploaded through the API (`POST /api/v1/uploads/images`) |
+| **Admin app** (Vite, `frontend/`) | The shop's own computer(s), never public | Local build (see `frontend/README.md`) |
 
 ```
-push to main ─┬─► GitHub Actions ──SSH──► droplet: git reset + deploy.sh (build → migrate → up)
-              └─► Vercel ──────────────► builds & deploys storefront/
+push to main ─┬─► GitHub Actions: npm test (real Postgres) ──pass──► SSH ► deploy.sh
+              │                                                     (build → backup → migrate → up)
+              └─► Vercel builds storefront/
 ```
 
-## Branch strategy (recommended)
-
-Trunk-based, which matches "push to main = live":
-
-- `main` is **always deployable** and auto-deploys to production.
-- Do work on short-lived **feature branches** → open a PR → merge to `main`.
-- Turn on branch protection for `main` (require PR + the deploy/CI to be green) once you have collaborators.
-- Want a safety net later? Add a `staging` branch + a second droplet/Vercel preview and promote `staging → main`. Not needed to start.
+Internet → `https://api.<domain>` → Caddy (:443) → backend (127.0.0.1:5001) → Postgres (compose network only)
 
 ---
 
 ## One-time droplet setup
 
-The droplet already runs the stack; this records the full setup so it's reproducible.
-
-1. **Docker + Compose v2** (the DO "Docker" marketplace image has them).
-2. **A deploy user** (`deploy`) in the `docker` group:
+1. **Docker + Compose v2** (the DO "Docker" marketplace image has both). Open the firewall for **22, 80 and 443 only**.
+2. **Deploy user** in the `docker` group: `sudo usermod -aG docker deploy`, then log out and back in.
+3. **Clone** to `~/premium-gadget`. For a private repo, use a read-only deploy key.
+4. **DNS**: create an `A` record `api.<domain>` → droplet IP. With Cloudflare, set it to *DNS only* (grey cloud) until Caddy has its certificate. If you later switch to the orange cloud:
+   - set `TRUST_PROXY=2`
+   - set `TRUSTED_PROXIES` to Cloudflare's IP ranges (https://www.cloudflare.com/ips/, space-separated); otherwise every visitor shares one rate-limit bucket
+   - set SSL mode to **Full (strict)**
+5. **Create `~/premium-gadget/.env`** from `.env.example`. It is never committed. Generate secrets with `openssl rand -hex 32`, and use hex for `POSTGRES_PASSWORD`. Compose refuses to start without the required values. The API also refuses placeholder or weak secrets in production, and `deploy.sh` checks them too.
+   - **Payments:** `SSLCOMMERZ_IS_SANDBOX` must be set explicitly. While you test on the real server with sandbox credentials, also set `ALLOW_SANDBOX_IN_PRODUCTION=true`. **Remove it and set `SSLCOMMERZ_IS_SANDBOX=false` before real customers order**, because sandbox "payments" are fake.
+6. **First deploy**: `bash deploy/deploy.sh`.
+7. **Create the first admin.** No admin is seeded in production.
    ```bash
-   sudo usermod -aG docker deploy    # then log out/in
+   read -s ADMIN_PASSWORD; export ADMIN_PASSWORD
+   docker compose -f docker-compose.yml run --rm \
+     -e ADMIN_NAME="Owner Name" -e ADMIN_PHONE=01886670543 -e ADMIN_PASSWORD \
+     backend npm run create-admin
    ```
-3. **Clone the repo** to `~/premium-gadget` (the workflow expects this path):
-   ```bash
-   cd ~ && git clone <REPO_URL> premium-gadget
-   ```
-   - Private repo? Give the droplet read access: add a **read-only deploy key**
-     (`ssh-keygen` on the droplet → add the `.pub` as a Deploy Key in GitHub repo
-     Settings), or clone over HTTPS with a PAT.
-4. **Create `~/premium-gadget/.env`** (gitignored; never committed). See the env
-   table below.
-5. First deploy: `bash deploy/deploy.sh`.
+8. **Backups**:
+   - Enable **DigitalOcean droplet backups**.
+   - Add the nightly dump cron below. It also copies to R2 when `R2_BACKUP_BUCKET` is set.
+     ```
+     0 21 * * * cd ~/premium-gadget && bash deploy/backup.sh >> ~/backups/backup.log 2>&1
+     ```
+   - Test a restore once (instructions are at the top of `deploy/backup.sh`).
 
-### CI SSH key
-
-Generate a dedicated key for GitHub Actions (no passphrase):
+### Optional: preview with demo data
+To see the storefront filled with a realistic demo catalog **before** entering real products:
 ```bash
-ssh-keygen -t ed25519 -C "gh-actions-deploy" -f gh_deploy_key
-# install the PUBLIC key on the droplet for the deploy user:
-ssh-copy-id -i gh_deploy_key.pub deploy@167.71.220.171
-#   (or: cat gh_deploy_key.pub | ssh deploy@167.71.220.171 'cat >> ~/.ssh/authorized_keys')
+docker compose -f docker-compose.yml run --rm backend npm run seed -- --allow-production
 ```
+This adds the catalog, branch and repair price list only: no users and no coupons. Remove the demo products from admin before launch, or start with a fresh DB.
 
-### GitHub repo secrets
-
-Settings → Secrets and variables → Actions → **New repository secret**:
+### GitHub Actions secrets
+Settings → Secrets and variables → Actions:
 
 | Secret | Value |
 |---|---|
-| `DROPLET_HOST` | `167.71.220.171` |
+| `DROPLET_HOST` | droplet IP |
 | `DROPLET_USER` | `deploy` |
-| `DROPLET_SSH_KEY` | contents of the **private** `gh_deploy_key` |
+| `DROPLET_SSH_KEY` | private key whose public half is in the deploy user's `authorized_keys` (`ssh-keygen -t ed25519 -f gh_deploy_key`) |
 | `DROPLET_PORT` | `22` (optional) |
 
-That's it — pushes to `main` now deploy automatically. You can also trigger a deploy manually from the **Actions** tab (workflow_dispatch).
+Every push or PR touching `backend/` runs the test suite. Only green pushes to `main` deploy. Manual runs are available from the Actions tab.
 
 ---
 
-## The droplet `.env`
+## Cloudflare R2 (images)
 
-Lives at `~/premium-gadget/.env`. Compose reads it for `${VAR}` substitution.
+1. Create a bucket (e.g. `premium-gadget-media`) and enable **public access**: either the `r2.dev` subdomain or a custom domain such as `media.<domain>`. Then set `R2_PUBLIC_BASE_URL` to that URL.
+2. Create an **R2 API token** with *Object Read & Write*, scoped to that bucket. Fill in `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`.
+3. *(Recommended)* Create a second, **private** bucket for DB backups and set `R2_BACKUP_BUCKET`.
+4. If you use a custom image domain, add it to `images.remotePatterns` in `storefront/next.config.mjs`.
 
-| Var | Purpose | Example (prod) |
-|---|---|---|
-| `NODE_ENV` | run mode | `production` |
-| `POSTGRES_USER/PASSWORD/DB` | DB creds (password set once, at first init) | strong values |
-| `JWT_SECRET` | token signing (`openssl rand -hex 32`) | 64-hex |
-| `JWT_EXPIRES_IN` | token lifetime | `7d` |
-| `CORS_ORIGIN` | storefront origin(s), comma-separated, no trailing slash | `https://shop.example.com` |
-| `SERVER_PUBLIC_URL` | **public** API base for SSLCommerz callbacks (ends with `/api/v1`) | `https://api.example.com/api/v1` |
-| `STOREFRONT_URL` | post-payment redirect target | `https://shop.example.com` |
-| `SSLCOMMERZ_STORE_ID/PASSWORD` | gateway creds | sandbox now |
-| `SSLCOMMERZ_IS_SANDBOX` | `true` until live | `true` |
+Uploaded images are re-encoded to WebP (EXIF/GPS stripped, max 1600 px) before they're stored.
 
-> ⚠️ **Never change `POSTGRES_PASSWORD` after the first init** — Postgres only
-> reads it when the data volume is first created. Changing it later causes
-> `password authentication failed`. To rotate: `ALTER USER` inside Postgres, or
-> `docker compose down -v` (⚠️ deletes data) and re-init.
+---
+
+## Storefront on Vercel
+
+1. Import the repo and set **Root Directory = `storefront`**.
+2. Environment variables:
+   - `NEXT_PUBLIC_API_BASE_URL = https://api.<domain>/api/v1`
+   - `NEXT_PUBLIC_SITE_URL = https://<domain>` (canonical URLs, sitemap, JSON-LD)
+   - `INTERNAL_API_KEY =` the same value as on the droplet. It's server-only and exempts SSR from per-IP rate limits.
+3. Set the function region close to the droplet (Settings → Functions).
+4. Add the storefront domain(s) to `CORS_ORIGIN` on the droplet. Keep `http://localhost:5173` there too, for the local admin app.
 
 ---
 
 ## Database migrations
 
-Schema is two layers:
-- `backend/src/db/schema.sql` — base tables, applied by Postgres **only on first
-  init** of the volume.
-- `backend/src/db/migrations/*.sql` — incremental changes, applied by the
-  **migration runner** (`backend/scripts/migrate.js`) on every deploy.
-
-The runner tracks applied files in a `schema_migrations` table, so each migration
-runs **once**. It's invoked automatically by `deploy.sh` (before the backend
-starts).
-
-**Adding a migration** (for the ongoing work):
-1. Create `backend/src/db/migrations/002_whatever.sql`.
-2. Write **plain SQL, no `BEGIN`/`COMMIT`** (the runner wraps each file in a
-   transaction). Prefer idempotent statements (`... IF NOT EXISTS`).
-3. Commit + push to `main` → it's applied on deploy.
-
-Run manually if needed: `docker compose -f docker-compose.yml run --rm backend npm run migrate`.
-
-> Note: your droplet DB was first created from `schema.sql` + `seed.sql` only, so
-> migration 001 (inventory_units, `reserved`, order snapshots, coupon link,
-> trigram index) is **not applied yet** there. The first CI deploy (or a manual
-> `deploy.sh`) applies it — required for the order/stock features to work.
-
----
+- `backend/src/db/migrations/*.sql` is the **only** source of schema. `000_base_schema.sql` holds the original tables.
+- `npm run migrate` applies pending files in order and records them in `schema_migrations`. `deploy.sh` runs it after a pre-migration backup.
+- Write plain SQL with **no `BEGIN`/`COMMIT`** (the runner wraps each file), and keep it idempotent (`IF NOT EXISTS`).
+- Databases created the old way (initdb + `schema.sql`) are detected and baselined automatically.
 
 ## Manual deploy & rollback
 
 ```bash
-# on the droplet
 cd ~/premium-gadget
 git fetch origin main && git reset --hard origin/main
 bash deploy/deploy.sh
 
-# rollback to a previous commit
-git reset --hard <good-commit-sha>
-bash deploy/deploy.sh
+# rollback code
+git reset --hard <good-commit-sha> && bash deploy/deploy.sh
+# rollback data (⚠️ overwrites the DB) — see deploy/backup.sh header
 ```
 
-## Dev vs prod compose
+## Local development
 
-- **Local**: `docker compose up` auto-merges `docker-compose.override.yml`
-  (nodemon hot-reload + the Vite app). Unchanged from before.
-- **Prod/droplet**: always `docker compose -f docker-compose.yml ...` (what
-  `deploy.sh` uses) — `npm start`, no source bind-mount, Postgres on localhost
-  only. Don't run a bare `docker compose up` on the droplet (it'd pull in dev
-  overrides).
-
----
-
-## Storefront on Vercel (free tier)
-
-1. **Import** the repo in Vercel → set **Root Directory = `storefront`** (it's a
-   monorepo; this is the key step). Framework auto-detects as Next.js.
-2. **Environment variables** (Project → Settings → Environment Variables):
-   - `NEXT_PUBLIC_API_BASE_URL = https://api.yourdomain.com/api/v1`
-   - `NEXT_PUBLIC_SITE_URL = https://your-store.vercel.app` (used for canonical
-     URLs, sitemap, JSON-LD).
-3. **Deploys**: Vercel auto-builds on push — `main` → Production, other branches
-   / PRs → Preview URLs (great for testing before merge).
-4. **Wire CORS back to the droplet**: add the Vercel production domain (and any
-   custom domain) to `CORS_ORIGIN` in the droplet `.env`, then redeploy backend.
-   Preview deployments get changing subdomains — list the stable ones, or use a
-   custom domain.
-
-### ⚠️ The backend must be HTTPS
-A Vercel (HTTPS) page **cannot** call `http://167.71.220.171:5001` — browsers
-block mixed content. Put the droplet behind HTTPS before connecting Vercel:
-- point `api.yourdomain.com` at the droplet and run **Caddy** in front of
-  `:5001` (automatic TLS), **or** front it with **Cloudflare** (orange-cloud),
-  **or** nginx + certbot.
-Then set `SERVER_PUBLIC_URL`/`NEXT_PUBLIC_API_BASE_URL` to the `https://` API
-domain.
+```bash
+cp .env.example .env              # dev values are fine locally
+docker compose up --build         # postgres + API (migrate + demo seed + nodemon) + admin app
+```
+- API: http://localhost:5001/api/v1. Admin: http://localhost:5173. Storefront: `cd storefront && npm run dev` on :3000.
+- The dev seed prints demo logins for local use only.
+- Backend tests: start the throwaway test DB once, then run `npm test`:
+  ```bash
+  docker run -d --name pg_premium_gadget_test -e POSTGRES_PASSWORD=test \
+    -p 127.0.0.1:55432:5432 --tmpfs /var/lib/postgresql/data postgres:16-alpine
+  cd backend && npm test
+  ```
 
 ---
 
 ## Go-live checklist
 
-- [ ] Strong `POSTGRES_PASSWORD` + `JWT_SECRET` set in droplet `.env` (before first DB init).
-- [ ] HTTPS in front of the backend (domain + TLS).
-- [ ] `CORS_ORIGIN`, `SERVER_PUBLIC_URL`, `STOREFRONT_URL` set to real `https://` URLs.
-- [ ] Vercel `NEXT_PUBLIC_API_BASE_URL` → the HTTPS API domain.
-- [ ] SSLCommerz live creds + `SSLCOMMERZ_IS_SANDBOX=false` (when ready).
-- [ ] Change seeded admin password (`01700000001 / Admin@123`) or remove seed for a clean DB.
-- [ ] Remove the Postgres host port mapping entirely if no admin tools need it.
+- [ ] Strong `POSTGRES_PASSWORD`, `JWT_SECRET` and `INTERNAL_API_KEY` in the droplet `.env`.
+- [ ] `api.<domain>` resolves and `https://api.<domain>/api/v1/health` returns `{"status":"ok"}`.
+- [ ] `CORS_ORIGIN`, `SERVER_PUBLIC_URL` and `STOREFRONT_URL` use real `https://` URLs.
+- [ ] Vercel env set (`NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_SITE_URL`, `INTERNAL_API_KEY`).
+- [ ] R2 bucket and keys set; an upload from admin shows on the storefront.
+- [ ] First admin created with `create-admin`; no demo users exist.
+- [ ] Staff accounts created from admin (Users → Add staff). To promote an existing customer account whose phone isn't OTP-verified, you must set a new password and give it to the person in person (this blocks number-squatting).
+- [ ] Droplet backups on, nightly `backup.sh` cron, one restore tested.
+- [ ] SSLCommerz live credentials + `SSLCOMMERZ_IS_SANDBOX=false`, and `ALLOW_SANDBOX_IN_PRODUCTION` removed. The callback URLs are derived from `SERVER_PUBLIC_URL`.
+- [ ] Repo switched to private.

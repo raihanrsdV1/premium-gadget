@@ -5,6 +5,7 @@
 # or run manually:  bash deploy/deploy.sh
 #
 # Uses ONLY docker-compose.yml (the production config) — never the dev override.
+# Order: check env → build → DB up → backup → migrate → API + proxy up.
 # ============================================================
 set -euo pipefail
 
@@ -13,8 +14,22 @@ cd "$(dirname "$0")/.."
 
 COMPOSE="docker compose -f docker-compose.yml"
 
+echo "==> Checking .env..."
+[ -f .env ] || { echo "✖ .env missing (see .env.example)"; exit 1; }
+for var in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB JWT_SECRET CORS_ORIGIN \
+           SERVER_PUBLIC_URL STOREFRONT_URL API_DOMAIN SSLCOMMERZ_STORE_ID SSLCOMMERZ_STORE_PASSWORD \
+           SSLCOMMERZ_IS_SANDBOX; do
+  grep -qE "^${var}=.+" .env || { echo "✖ ${var} is not set in .env"; exit 1; }
+done
+if grep -qiE '^(POSTGRES_PASSWORD|JWT_SECRET|INTERNAL_API_KEY)=.*(change[_-]?me|your[_-]|placeholder|example)' .env; then
+  echo "✖ .env still contains placeholder secrets — generate real ones (openssl rand -hex 32)"; exit 1
+fi
+if grep -qE '^SSLCOMMERZ_IS_SANDBOX=true' .env; then
+  echo "⚠️  SSLCOMMERZ_IS_SANDBOX=true — payments are FAKE. Set it to false before taking real orders."
+fi
+
 echo "==> Building images..."
-$COMPOSE build
+$COMPOSE build --pull
 
 echo "==> Starting database..."
 $COMPOSE up -d postgres
@@ -27,11 +42,14 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
+echo "==> Pre-migration backup..."
+bash deploy/backup.sh pre-deploy
+
 echo "==> Running database migrations..."
 $COMPOSE run --rm backend npm run migrate
 
-echo "==> Starting backend..."
-$COMPOSE up -d backend
+echo "==> Starting backend + HTTPS proxy..."
+$COMPOSE up -d backend caddy
 
 echo "==> Pruning dangling images..."
 docker image prune -f >/dev/null 2>&1 || true
