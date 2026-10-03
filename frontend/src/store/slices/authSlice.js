@@ -1,11 +1,11 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-const storedUser = (() => {
-  try { return JSON.parse(localStorage.getItem('user')) || null; } catch { return null; }
-})();
+const read = (key) => {
+  try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
+};
 
 const initialState = {
-  user: storedUser,
+  user: read('user'),
   token: localStorage.getItem('token') || null,
   isAuthenticated: !!localStorage.getItem('token'),
 };
@@ -22,6 +22,11 @@ const authSlice = createSlice({
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
     },
+    // Refresh the cached profile (role/branch can change server-side).
+    setUser: (state, action) => {
+      state.user = action.payload;
+      localStorage.setItem('user', JSON.stringify(action.payload));
+    },
     logout: (state) => {
       state.user = null;
       state.token = null;
@@ -32,5 +37,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { setCredentials, logout } = authSlice.actions;
+export const { setCredentials, setUser, logout } = authSlice.actions;
 export default authSlice.reducer;
