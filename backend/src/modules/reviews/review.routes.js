@@ -1,16 +1,24 @@
 const { Router } = require('express');
 const controller = require('./review.controller');
-const { authenticate, authorize } = require('../auth/auth.middleware');
+const { authenticate, requireStaff } = require('../auth/auth.middleware');
+const { formLimiter } = require('../../middleware/rateLimiter');
+const { validate } = require('../../middleware/validate');
+const { idParams } = require('../../utils/validators');
+const v = require('./review.validation');
 
 const router = Router();
 
-// Public
-router.get('/', controller.getAll);
-router.get('/:id', controller.getById);
+// Public — approved reviews of a product + rating summary.
+router.get('/', validate(v.listQuerySchema, 'query'), controller.listPublic);
 
-// Admin
-router.post('/', authenticate, authorize('super_admin', 'branch_admin'), controller.create);
-router.put('/:id', authenticate, authorize('super_admin', 'branch_admin'), controller.update);
-router.delete('/:id', authenticate, authorize('super_admin'), controller.remove);
+// Customer — own reviews (static paths before /:id).
+router.get('/mine', authenticate, validate(v.mineQuerySchema, 'query'), controller.listMine);
+router.post('/', authenticate, formLimiter, validate(v.createSchema), controller.create);
+router.put('/:id', authenticate, validate(idParams, 'params'), validate(v.updateSchema), controller.update);
+router.delete('/:id', authenticate, validate(idParams, 'params'), controller.remove);
+
+// Staff — moderation.
+router.get('/admin', authenticate, requireStaff, validate(v.adminQuerySchema, 'query'), controller.listAdmin);
+router.patch('/:id/moderation', authenticate, requireStaff, validate(idParams, 'params'), validate(v.moderationSchema), controller.moderate);
 
 module.exports = router;
