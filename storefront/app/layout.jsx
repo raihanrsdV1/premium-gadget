@@ -1,55 +1,81 @@
+import LiveBackground from "@/components/ui/LiveBackground";
 import "./globals.css";
+import { DM_Sans, Sora } from "next/font/google";
 import StoreProvider from "@/store/StoreProvider";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import AnnouncementBar from "@/components/layout/AnnouncementBar";
+import WhatsAppFloat from "@/components/layout/WhatsAppFloat";
+import { getMenu, getSettings } from "@/lib/api/server";
+import JsonLd from "@/components/seo/JsonLd";
+import { SITE, postalAddressJsonLd, branchesJsonLd, organizationId } from "@/lib/site";
+import { DEFAULT_DESCRIPTION, SITE_URL } from "@/lib/seo";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const dmSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans", display: "swap" });
+const sora = Sora({ subsets: ["latin"], variable: "--font-sora", display: "swap", weight: ["600", "700", "800"] });
 
+// Site-wide defaults. Every indexable page sets its own canonical, Open Graph
+// and Twitter tags (lib/seo pageMetadata); there's deliberately no canonical
+// here, or pages without one would all claim to be the home page.
 export const metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Premium Gadget — Laptops, Gadgets & Repair in Bangladesh",
+    default: "Premium Gadget — New & Used Laptops in Chattogram, Bangladesh",
     template: "%s · Premium Gadget",
   },
-  description:
-    "Bangladesh's most trusted destination for premium laptops, accessories, and expert repair services.",
+  description: DEFAULT_DESCRIPTION,
+  applicationName: SITE.name,
   openGraph: {
     type: "website",
-    siteName: "Premium Gadget",
-    title: "Premium Gadget — Laptops, Gadgets & Repair in Bangladesh",
-    description:
-      "Bangladesh's most trusted destination for premium laptops, accessories, and expert repair services.",
-    url: SITE_URL,
-    locale: "en_US",
+    siteName: SITE.name,
+    title: "Premium Gadget — New & Used Laptops in Chattogram, Bangladesh",
+    description: DEFAULT_DESCRIPTION,
+    locale: "en_BD",
   },
+  twitter: { card: "summary_large_image" },
 };
+
+export const viewport = {
+  themeColor: SITE.themeColor,
+};
+
+const logoUrl = `${SITE_URL}${SITE.logoPath}`;
 
 const organizationJsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",
-  name: "Premium Gadget",
+  "@id": organizationId(SITE_URL),
+  name: SITE.name,
   url: SITE_URL,
-  description:
-    "Bangladesh's most trusted destination for premium laptops, accessories, and expert repair services.",
-  address: {
-    "@type": "PostalAddress",
-    streetAddress: "Level 4, Multiplan Center, Elephant Road",
-    addressLocality: "Dhaka",
-    addressCountry: "BD",
+  logo: {
+    "@type": "ImageObject",
+    url: logoUrl,
+    width: SITE.logoSize.width,
+    height: SITE.logoSize.height,
   },
+  image: logoUrl,
+  description: DEFAULT_DESCRIPTION,
+  address: postalAddressJsonLd,
+  telephone: SITE.phoneE164,
+  sameAs: [SITE.facebookUrl],
   contactPoint: {
     "@type": "ContactPoint",
-    telephone: "+880-1711-000000",
+    telephone: SITE.phoneE164,
     contactType: "customer service",
-    email: "support@premiumgadget.com.bd",
+    areaServed: "BD",
+    availableLanguage: ["en", "bn"],
   },
+  department: branchesJsonLd(SITE_URL),
 };
 
 const websiteJsonLd = {
   "@context": "https://schema.org",
   "@type": "WebSite",
-  name: "Premium Gadget",
+  "@id": `${SITE_URL}/#website`,
+  name: SITE.name,
   url: SITE_URL,
+  publisher: { "@id": organizationId(SITE_URL) },
+  inLanguage: "en-BD",
   potentialAction: {
     "@type": "SearchAction",
     target: {
@@ -60,22 +86,26 @@ const websiteJsonLd = {
   },
 };
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
+  // Cached, tagged reads; either may be null and the shell still renders.
+  const [menu, settings] = await Promise.all([getMenu(), getSettings()]);
   return (
-    <html lang="en">
-      <body className="min-h-screen flex flex-col font-sans antialiased text-foreground bg-background">
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
-        />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
-        />
+    <html lang="en" className={`${dmSans.variable} ${sora.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Applies the saved/system theme before first paint (no flash). Same-origin file: no CSP change needed. */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src="/theme-init.js" />
+      </head>
+      <body className="min-h-screen flex flex-col font-sans antialiased text-foreground">
+        <JsonLd data={organizationJsonLd} />
+        <JsonLd data={websiteJsonLd} />
         <StoreProvider>
-          <Header />
+          <LiveBackground />
+          <AnnouncementBar announcement={settings?.announcement} />
+          <Header menu={menu} />
           <main className="flex-1">{children}</main>
           <Footer />
+          <WhatsAppFloat />
         </StoreProvider>
       </body>
     </html>

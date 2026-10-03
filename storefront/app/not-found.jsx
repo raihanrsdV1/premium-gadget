@@ -1,18 +1,21 @@
+import CatMascot from "@/components/ui/CatMascot";
 import Link from "next/link";
-import { Button } from "@/components/ui/Button";
+import { buttonClass } from "@/components/ui/Button";
 
 // Styled 404 rendered inside the shared shell (layout wraps it).
 export default function NotFound() {
   return (
-    <div className="container flex flex-col items-center justify-center min-h-[70vh] text-center px-4">
-      <h1 className="text-6xl font-bold text-primary mb-4">404</h1>
-      <h2 className="text-2xl font-semibold mb-2">Page Not Found</h2>
-      <p className="text-muted-foreground mb-8">
-        The page you&apos;re looking for doesn&apos;t exist or has been moved.
+    <div className="container flex min-h-[60vh] flex-col items-center justify-center py-12 text-center">
+      <CatMascot size={220} priority />
+      <p className="mt-4 font-display text-6xl font-extrabold text-primary sm:text-7xl">404</p>
+      <h1 className="mt-2 font-display text-2xl font-extrabold">This page wandered off</h1>
+      <p className="mt-2 max-w-md text-muted-foreground">
+        The page you&apos;re looking for doesn&apos;t exist or has moved. Let&apos;s get you back to the good stuff.
       </p>
-      <Link href="/">
-        <Button>Return Home</Button>
-      </Link>
+      <div className="mt-6 flex flex-wrap justify-center gap-3">
+        <Link href="/" className={buttonClass({ size: "lg" })}>Back to home</Link>
+        <Link href="/products" className={buttonClass({ variant: "outline", size: "lg" })}>Browse products</Link>
+      </div>
     </div>
   );
 }

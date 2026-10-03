@@ -1,277 +1,173 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ShoppingCart,
-  Search,
-  Menu,
-  UserCircle,
-  LogOut,
-  Package,
-  Heart,
-  LayoutDashboard,
-  X,
-  ChevronDown,
-} from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { ChevronDown, Heart, LayoutDashboard, LogOut, Menu, Package, Phone, Search, ShoppingCart, UserCircle, X } from "lucide-react";
 import { useSelector, useDispatch } from "react-redux";
 import { logout } from "@/store/slices/authSlice";
+import { SITE } from "@/lib/site";
+import { useModalA11y } from "@/hooks/useModalA11y";
+import SearchCombobox from "./SearchCombobox";
+import MegaNav from "./MegaNav";
+import MobileDrawer from "./MobileDrawer";
+import ThemeToggle from "./ThemeToggle";
+import BrandLogo from "@/components/ui/BrandLogo";
 
-// Ported from frontend/src/components/layout/Header.jsx
-// (react-router Link/useNavigate -> next/link + next/navigation useRouter).
-const NAV_LINKS = [
-  { href: "/products", label: "Laptops" },
-  { href: "/products?category=accessories", label: "Accessories" },
-  { href: "/repairs", label: "Repairs" },
-  { href: "/repairs/track", label: "Track Repair" },
-];
+const iconBtn =
+  "relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-export default function Header() {
-  const [searchQuery, setSearchQuery] = useState("");
+function SearchOverlay({ onClose }) {
+  const ref = useModalA11y(true, onClose);
+  return (
+    <div className="fixed inset-0 z-[80] md:hidden">
+      <div className="absolute inset-0 bg-navy/60" onClick={onClose} aria-hidden="true" />
+      <div ref={ref} role="dialog" aria-modal="true" aria-label="Search" className="absolute inset-x-0 top-0 max-h-full animate-[pg-pop_.18s_ease_both] bg-background p-3 shadow-float">
+        <div className="flex items-start gap-2">
+          <SearchCombobox autoFocus onDone={onClose} className="min-w-0 flex-1" idPrefix="m-search" />
+          <button type="button" onClick={onClose} aria-label="Close search" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-accent">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Site header: logo, typeahead search, theme, wishlist, account, cart, plus the
+ * category bar / mega menu (desktop) and drawer (mobile). The announcement
+ * ticker is a separate sibling (see app/layout.jsx) so only this bar is sticky.
+ * @param {{ menu: { categories: object[] }|null }} props
+ */
+export default function Header({ menu }) {
+  const categories = menu?.categories || [];
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const router = useRouter();
   const dispatch = useDispatch();
-  const menuRef = useRef(null);
+  const userRef = useRef(null);
 
   const totalQuantity = useSelector((state) => state.cart.totalQuantity);
   const { isAuthenticated, user } = useSelector((state) => state.auth);
   const isAdmin = user?.role === "super_admin" || user?.role === "branch_admin";
 
   useEffect(() => {
-    const handler = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setUserMenuOpen(false);
-      }
+    const onDown = (e) => {
+      if (userRef.current && !userRef.current.contains(e.target)) setUserMenuOpen(false);
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    const onKey = (e) => e.key === "Escape" && setUserMenuOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-      setMobileMenuOpen(false);
-    }
-  };
 
   const handleLogout = () => {
     dispatch(logout());
     setUserMenuOpen(false);
+    setDrawerOpen(false);
     router.push("/");
   };
 
+  const menuItem = "flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-accent transition-colors";
+
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center gap-2 sm:gap-4">
-        {/* Logo */}
-        <Link href="/" className="flex items-center shrink-0">
-          <span className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-blue-600">
-            Premium Gadget
-          </span>
+    <header className="pg-glass-bar sticky top-0 z-50 w-full">
+      <div className="container flex h-16 items-center gap-0.5 xs:gap-1.5 sm:gap-3 md:h-[72px]">
+        <button type="button" className={`${iconBtn} md:hidden -ml-2`} onClick={() => setDrawerOpen(true)} aria-label="Open menu" aria-haspopup="dialog">
+          <Menu className="h-6 w-6" />
+        </button>
+
+        <Link href="/" className="flex shrink-0 items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Premium Gadget home">
+          <BrandLogo wordmark="responsive" priority markClassName="h-8 w-8 sm:h-10 sm:w-10 md:h-11 md:w-11" textClassName="text-base sm:text-lg md:text-xl" />
         </Link>
 
-        {/* Desktop Nav */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium ml-4">
-          {NAV_LINKS.map(({ href, label }) => (
-            <Link
-              key={label}
-              href={href}
-              className="text-foreground/60 hover:text-foreground transition-colors"
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
+        {/* Desktop search */}
+        <div className="hidden min-w-0 flex-1 px-2 md:block lg:px-8">
+          <SearchCombobox className="mx-auto max-w-2xl" />
+        </div>
+        <div className="flex-1 md:hidden" />
 
-        {/* Spacer */}
-        <div className="flex-1" />
+        <a href={`tel:${SITE.phoneE164}`} className="hidden h-10 shrink-0 items-center gap-2 rounded-full border-[1.5px] border-foreground/25 px-4 text-sm font-bold hover:bg-accent xl:flex" aria-label={`Call ${SITE.phoneDisplay}`}>
+          <Phone className="h-4 w-4" aria-hidden="true" />{SITE.phoneDisplay}
+        </a>
 
-        {/* Search — desktop */}
-        <form onSubmit={handleSearch} className="relative hidden md:block">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search products..."
-            className="h-9 w-[220px] lg:w-[320px] rounded-md border border-input bg-background px-3 py-1 pl-8 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          />
-        </form>
-
-        {/* Cart */}
-        <Link href="/cart">
-          <Button variant="ghost" size="icon" className="relative shrink-0">
-            <ShoppingCart className="h-5 w-5" />
-            {totalQuantity > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                {totalQuantity}
-              </span>
-            )}
-            <span className="sr-only">Cart</span>
-          </Button>
+        <button type="button" className={`${iconBtn} md:hidden`} onClick={() => setSearchOpen(true)} aria-label="Search" aria-haspopup="dialog">
+          <Search className="h-5 w-5" />
+        </button>
+        <ThemeToggle />
+        <Link href="/wishlist" className={`${iconBtn} hidden sm:inline-flex`} aria-label="Wishlist">
+          <Heart className="h-5 w-5" />
         </Link>
 
-        {/* Auth area */}
+        {/* Account */}
         {isAuthenticated ? (
-          <div className="relative" ref={menuRef}>
+          <div className="relative hidden md:block" ref={userRef}>
             <button
+              type="button"
               onClick={() => setUserMenuOpen((v) => !v)}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium hover:bg-accent transition-colors"
+              aria-expanded={userMenuOpen}
+              aria-haspopup="menu"
+              className="flex h-10 items-center gap-2 rounded-full bg-tint px-3 text-sm font-semibold hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <UserCircle className="h-5 w-5 text-primary" />
-              <span className="hidden md:block max-w-[100px] truncate">
-                {user?.full_name?.split(" ")[0] || "Account"}
-              </span>
-              <ChevronDown
-                className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${userMenuOpen ? "rotate-180" : ""}`}
-              />
+              <UserCircle className="h-5 w-5 text-primary" aria-hidden="true" />
+              <span className="max-w-[90px] truncate">{user?.full_name?.split(" ")[0] || "Account"}</span>
+              <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${userMenuOpen ? "rotate-180" : ""}`} aria-hidden="true" />
             </button>
-
             {userMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-52 rounded-xl border bg-background shadow-lg py-1 z-50">
-                <div className="px-4 py-2.5 border-b">
-                  <p className="text-sm font-semibold truncate">{user?.full_name || "User"}</p>
-                  <p className="text-xs text-muted-foreground capitalize">
-                    {user?.role?.replace("_", " ") || "Customer"}
-                  </p>
+              <div role="menu" className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-2xl border border-border bg-popover py-1 shadow-float">
+                <div className="border-b border-border px-4 py-2.5">
+                  <p className="truncate text-sm font-semibold">{user?.full_name || "User"}</p>
+                  <p className="text-xs capitalize text-muted-foreground">{user?.role?.replace("_", " ") || "Customer"}</p>
                 </div>
-
                 {isAdmin ? (
-                  <Link
-                    href="/admin"
-                    onClick={() => setUserMenuOpen(false)}
-                    className="flex items-center gap-2.5 px-4 py-2 text-sm hover:bg-accent transition-colors"
-                  >
-                    <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
-                    Admin Dashboard
-                  </Link>
+                  <Link role="menuitem" href="/admin" onClick={() => setUserMenuOpen(false)} className={menuItem}><LayoutDashboard className="h-4 w-4 text-muted-foreground" />Admin Dashboard</Link>
                 ) : (
                   <>
-                    <Link
-                      href="/orders"
-                      onClick={() => setUserMenuOpen(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-sm hover:bg-accent transition-colors"
-                    >
-                      <Package className="h-4 w-4 text-muted-foreground" />
-                      My Orders
-                    </Link>
-                    <Link
-                      href="/wishlist"
-                      onClick={() => setUserMenuOpen(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-sm hover:bg-accent transition-colors"
-                    >
-                      <Heart className="h-4 w-4 text-muted-foreground" />
-                      Wishlist
-                    </Link>
+                    <Link role="menuitem" href="/orders" onClick={() => setUserMenuOpen(false)} className={menuItem}><Package className="h-4 w-4 text-muted-foreground" />My Orders</Link>
+                    <Link role="menuitem" href="/wishlist" onClick={() => setUserMenuOpen(false)} className={menuItem}><Heart className="h-4 w-4 text-muted-foreground" />Wishlist</Link>
                   </>
                 )}
-
-                <div className="border-t mt-1 pt-1">
-                  <button
-                    onClick={handleLogout}
-                    className="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-                  >
-                    <LogOut className="h-4 w-4" />
-                    Log Out
-                  </button>
+                <div className="mt-1 border-t border-border pt-1">
+                  <button role="menuitem" type="button" onClick={handleLogout} className={`${menuItem} w-full text-destructive`}><LogOut className="h-4 w-4" />Log Out</button>
                 </div>
               </div>
             )}
           </div>
         ) : (
-          <div className="hidden md:flex items-center gap-2">
-            <Link href="/login">
-              <Button variant="ghost" size="sm">Log In</Button>
-            </Link>
-            <Link href="/register">
-              <Button size="sm">Sign Up</Button>
-            </Link>
-          </div>
+          <Link href="/login" className={`${iconBtn} hidden md:inline-flex bg-tint`} aria-label="Log in or sign up" title="Log in">
+            <UserCircle className="h-5 w-5" />
+          </Link>
         )}
 
-        {/* Mobile hamburger */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden shrink-0"
-          onClick={() => setMobileMenuOpen((v) => !v)}
-          aria-label="Toggle menu"
-        >
-          {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </Button>
+        {/* Cart */}
+        <Link href="/cart" className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-navy text-navy-foreground transition-colors hover:bg-navy/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary/85" aria-label={`Cart${totalQuantity > 0 ? `, ${totalQuantity} item${totalQuantity === 1 ? "" : "s"}` : ""}`}>
+          <ShoppingCart className="h-5 w-5" aria-hidden="true" />
+          {totalQuantity > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-coral px-1 text-[11px] font-extrabold text-coral-foreground">
+              {totalQuantity}
+            </span>
+          )}
+        </Link>
       </div>
 
-      {/* Mobile Menu */}
-      {mobileMenuOpen && (
-        <div className="md:hidden border-t bg-background px-4 py-4 space-y-4">
-          <form onSubmit={handleSearch}>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search products..."
-                className="h-9 w-full rounded-md border border-input bg-background px-3 py-1 pl-8 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-            </div>
-          </form>
+      <MegaNav categories={categories} />
 
-          <nav className="flex flex-col gap-1">
-            {NAV_LINKS.map(({ href, label }) => (
-              <Link
-                key={label}
-                href={href}
-                onClick={() => setMobileMenuOpen(false)}
-                className="rounded-md px-3 py-2 text-sm font-medium text-foreground/70 hover:bg-accent hover:text-foreground transition-colors"
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
-
-          <div className="border-t pt-4">
-            {isAuthenticated ? (
-              <div className="space-y-1">
-                <p className="px-3 text-xs text-muted-foreground mb-2">
-                  Signed in as{" "}
-                  <span className="font-semibold text-foreground">{user?.full_name}</span>
-                </p>
-                {isAdmin ? (
-                  <Link href="/admin" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent">
-                    <LayoutDashboard className="h-4 w-4" /> Admin Dashboard
-                  </Link>
-                ) : (
-                  <>
-                    <Link href="/orders" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent">
-                      <Package className="h-4 w-4" /> My Orders
-                    </Link>
-                    <Link href="/wishlist" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent">
-                      <Heart className="h-4 w-4" /> Wishlist
-                    </Link>
-                  </>
-                )}
-                <button onClick={handleLogout} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive hover:bg-destructive/10">
-                  <LogOut className="h-4 w-4" /> Log Out
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
-                  <Button variant="outline" className="w-full">Log In</Button>
-                </Link>
-                <Link href="/register" onClick={() => setMobileMenuOpen(false)}>
-                  <Button className="w-full">Sign Up</Button>
-                </Link>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <MobileDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        categories={categories}
+        isAuthenticated={isAuthenticated}
+        user={user}
+        isAdmin={isAdmin}
+        onLogout={handleLogout}
+      />
+      {searchOpen && <SearchOverlay onClose={() => setSearchOpen(false)} />}
     </header>
   );
 }

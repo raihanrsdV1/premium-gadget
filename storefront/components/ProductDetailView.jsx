@@ -1,66 +1,97 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useDispatch } from "react-redux";
-import {
-  Star,
-  ShieldCheck,
-  Truck,
-  RotateCcw,
-  Check,
-  ShoppingCart,
-} from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { addItem } from "@/store/slices/cartSlice";
+import { Check, MapPin, Minus, Plus, ShieldCheck, ShoppingCart, Star, Truck, Zap } from "lucide-react";
+import { Button, buttonClass } from "@/components/ui/Button";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import { BADGE_TONES } from "@/components/product/ProductCard";
+import ProductGallery from "@/components/product/ProductGallery";
+import ProductTabs from "@/components/product/ProductTabs";
+import Countdown from "@/components/home/Countdown";
 import WishlistButton from "@/components/product/WishlistButton";
+import { addItem } from "@/store/slices/cartSlice";
+import { absoluteUrl, conditionOf, formatBDT, toNumber, warrantyText } from "@/lib/seo";
+import { SITE } from "@/lib/site";
+import CatMascot from "@/components/ui/CatMascot";
+
+const FALLBACK_IMAGE =
+  "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&q=80&w=800";
+
+const chip = "inline-flex items-center rounded-full px-3 py-1.5 text-xs font-bold leading-none";
 
 /**
- * Interactive product UI, ported from frontend/src/pages/ProductDetail.jsx.
- * Receives the already-fetched `product` from the server component, so the
- * initial HTML is server-rendered (good for SEO / View Source).
- *
- * Differences from the Vite version (intentional, scoped to this pass):
- *  - react-router <Link to> -> next/link <Link href>
- *  - prices arrive as strings from the API -> coerced with Number()
- *  - Add-to-cart is local-only feedback; cart/Redux isn't wired in the
- *    storefront yet (only ProductDetail is migrated in this pass).
+ * Interactive product page. Receives the already-fetched `product` from the
+ * server page, so the first HTML is server-rendered. Server-rendered slots
+ * keep the Markdown renderer and spec markup out of the client bundle:
+ *  - `overview`, `specs`, `delivery`: panel content (rendered, hidden when inactive)
+ *  - `condition`: <ConditionReport> (pre-owned only) or null
+ *  - `related`: related products carousel or null
  */
-export default function ProductDetailView({ product }) {
+export default function ProductDetailView({
+  product,
+  highlights = [],
+  breadcrumbs = [],
+  overview = null,
+  specs = null,
+  delivery = null,
+  condition: conditionReport = null,
+  related = null,
+  deliveryFrom = null,
+  codEnabled = true,
+}) {
   const dispatch = useDispatch();
-  const variants = product.variants || [];
-  const [activeImage, setActiveImage] = useState(0);
-  const [selectedVariant, setSelectedVariant] = useState(null);
+  const router = useRouter();
+  const variants = (product.variants || []).filter((v) => v.is_active !== false);
+  const [selectedId, setSelectedId] = useState(variants[0]?.id ?? null);
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
+  const [barVisible, setBarVisible] = useState(false);
+  const ctaRef = useRef(null);
 
-  const activeVariant = selectedVariant || variants[0] || null;
+  const activeVariant = variants.find((v) => v.id === selectedId) || variants[0] || null;
+  const price = toNumber(activeVariant?.price ?? product.price) ?? 0;
+  const compareAt = toNumber(activeVariant?.compare_at_price);
+  const onSale = compareAt !== null && compareAt > price;
+  const pct = onSale ? Math.round(((compareAt - price) / compareAt) * 100) : 0;
+  const saleEnds = onSale ? activeVariant?.sale_ends_at || null : null;
 
-  const colors = [...new Set(variants.map((v) => v.color).filter(Boolean))];
-  const storages = [
-    ...new Set(variants.map((v) => v.attributes?.Storage).filter(Boolean)),
-  ];
-  const price = Number(activeVariant?.price ?? product.price ?? 0);
-  const compareAt = activeVariant?.compare_at_price
-    ? Number(activeVariant.compare_at_price)
-    : null;
-  const description = product.description || product.description_md;
+  const cond = conditionOf(product);
+  const isUsed = cond.code !== "new";
+  const badges = (Array.isArray(product.badges) ? product.badges : []).filter((b) => b?.label);
 
-  // Available stock for the selected variant (added to the API response).
+  const gallery = product.image_list?.length
+    ? product.image_list.map((img) => ({ url: img.url, alt: img.alt_text || product.name }))
+    : (product.images || []).map((url) => ({ url, alt: product.name }));
+  const images = gallery.length ? gallery : [{ url: FALLBACK_IMAGE, alt: product.name }];
+
   const available = Number(activeVariant?.available ?? 0);
   const outOfStock = available <= 0;
   const lowStock = available > 0 && available <= 5;
   const effectiveQty = Math.min(qty, Math.max(available, 1));
 
-  // Switching variant: reset quantity so we never carry a qty above the new
-  // variant's stock.
+  // Branch stock for the selected variant (falls back to the product total).
+  const branches = (activeVariant?.branch_availability || product.branch_availability || []).filter((b) => b?.branch_name);
+  const inBranches = branches.filter((b) => Number(b.available) > 0);
+
+  // Show the sticky purchase bar once the main buttons scroll out of view.
+  useEffect(() => {
+    const el = ctaRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return undefined;
+    const io = new IntersectionObserver(([e]) => setBarVisible(!e.isIntersecting), { rootMargin: "0px 0px -64px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
   const selectVariant = (v) => {
-    setSelectedVariant(v);
+    setSelectedId(v.id);
     setQty(1);
   };
 
-  const handleAddToCart = () => {
-    if (outOfStock) return;
+  const addToCart = () => {
+    if (outOfStock) return false;
     dispatch(
       addItem({
         id: activeVariant?.id || product.id,
@@ -73,225 +104,251 @@ export default function ProductDetailView({ product }) {
         maxStock: available,
       })
     );
-    setAdded(true);
-    setTimeout(() => setAdded(false), 2000);
+    return true;
+  };
+  const handleAdd = () => {
+    if (addToCart()) {
+      setAdded(true);
+      setTimeout(() => setAdded(false), 2000);
+    }
+  };
+  const handleBuyNow = () => {
+    if (addToCart()) router.push("/checkout");
   };
 
-  return (
-    <div className="container px-4 py-8">
-      {/* Breadcrumb */}
-      <div className="flex items-center text-sm text-muted-foreground mb-8 flex-wrap gap-1">
-        <Link href="/" className="hover:text-foreground">Home</Link>
-        <span>/</span>
-        <Link href="/products" className="hover:text-foreground">Products</Link>
-        <span>/</span>
-        <span className="text-foreground line-clamp-1">{product.name}</span>
-      </div>
+  const waText = `Hi Premium Gadget, I'm interested in ${product.name}${activeVariant?.variant_name ? ` (${activeVariant.variant_name})` : ""}. ${absoluteUrl(`/products/${product.slug}`)} Is it available?`;
+  const waHref = `${SITE.whatsappUrl}?text=${encodeURIComponent(waText)}`;
+  const warranty = warrantyText(product);
+  const rating = product.rating?.count > 0 ? product.rating : null;
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-16">
-        {/* Images */}
-        <div className="space-y-4">
-          <div className="aspect-[4/3] bg-white rounded-2xl border overflow-hidden flex items-center justify-center p-8">
-            <img
-              src={
-                product.images?.[activeImage] ||
-                "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&q=80&w=800"
-              }
-              alt={product.name}
-              className="object-contain max-h-full max-w-full"
-            />
-          </div>
-          {product.images?.length > 1 && (
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {product.images.map((img, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setActiveImage(idx)}
-                  className={`shrink-0 w-20 h-20 rounded-lg border bg-white overflow-hidden p-2 transition-all ${activeImage === idx ? "ring-2 ring-primary border-transparent" : "hover:border-primary/50"}`}
-                >
-                  <img src={img} alt="" className="object-contain w-full h-full" />
-                </button>
+  const qtyBtn = "flex h-full w-11 items-center justify-center hover:bg-accent disabled:pointer-events-none disabled:opacity-40";
+
+  return (
+    <div className="container py-5 sm:py-8">
+      <Breadcrumbs items={breadcrumbs} className="mb-4" />
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-12">
+        <div className="lg:sticky lg:top-24 lg:self-start">
+          <ProductGallery images={images} name={product.name} />
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-5">
+          {/* Badges + title */}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
+              {isUsed && <span className={`${chip} bg-tint text-primary`}>{cond.label}{product.condition_grade ? ` · Grade ${product.condition_grade}` : ""}</span>}
+              {!isUsed && <span className={`${chip} bg-tint text-primary`}>Brand new</span>}
+              {badges.map((b) => (
+                <span key={b.label} className={`${chip} ${BADGE_TONES[b.tone] || BADGE_TONES.coral}`}>{b.label}</span>
               ))}
             </div>
-          )}
-        </div>
-
-        {/* Info */}
-        <div className="flex flex-col">
-          {product.condition === "used" && (
-            <span className="mb-4 inline-flex items-center rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-semibold text-orange-700 w-fit">
-              Pre-Owned Certified
-            </span>
-          )}
-
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-2">{product.name}</h1>
-
-          <div className="flex items-center gap-4 mb-6 text-sm flex-wrap">
-            {product.brand && (
-              <span className="text-muted-foreground">Brand: <span className="font-medium text-foreground">{product.brand}</span></span>
-            )}
-            <div className="flex items-center gap-1">
-              <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-              <span className="font-medium">4.8</span>
-            </div>
-          </div>
-
-          {product.short_description && (
-            <p className="text-lg text-muted-foreground mb-6 leading-relaxed">{product.short_description}</p>
-          )}
-
-          <div className="text-4xl font-bold mb-3">
-            ৳{price.toLocaleString()}
-            {compareAt && (
-              <span className="text-xl text-muted-foreground line-through ml-3 font-medium">
-                ৳{compareAt.toLocaleString()}
-              </span>
-            )}
-          </div>
-
-          {/* Stock indicator */}
-          <div className="mb-8 text-sm font-medium">
-            {outOfStock ? (
-              <span className="text-destructive">Out of stock</span>
-            ) : lowStock ? (
-              <span className="text-orange-600">Only {available} left in stock</span>
-            ) : (
-              <span className="text-green-600">In stock</span>
-            )}
-          </div>
-
-          {/* Variant selectors */}
-          {(colors.length > 0 || storages.length > 0) && (
-            <div className="space-y-5 mb-8 pb-8 border-b">
-              {colors.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium mb-3">
-                    Color: <span className="text-muted-foreground">{activeVariant?.color}</span>
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {colors.map((color) => (
-                      <button
-                        key={color}
-                        onClick={() => {
-                          const v =
-                            variants.find((v) => v.color === color && v.attributes?.Storage === activeVariant?.attributes?.Storage) ||
-                            variants.find((v) => v.color === color);
-                          if (v) selectVariant(v);
-                        }}
-                        className={`px-4 py-2 text-sm font-medium rounded-md border transition-all ${activeVariant?.color === color ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-input hover:border-foreground/50"}`}
-                      >
-                        {color}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            <h1 className="font-display text-[26px] font-extrabold leading-tight tracking-tight sm:text-4xl">{product.name}</h1>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+              {product.brand && (
+                <span>
+                  Brand:{" "}
+                  {product.brand_slug ? (
+                    <Link href={`/brands/${product.brand_slug}`} className="font-bold text-foreground hover:text-primary hover:underline">{product.brand}</Link>
+                  ) : (
+                    <strong className="text-foreground">{product.brand}</strong>
+                  )}
+                </span>
               )}
-              {storages.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium mb-3">
-                    Storage: <span className="text-muted-foreground">{activeVariant?.attributes?.Storage}</span>
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {storages.map((storage) => {
-                      const match = variants.find((v) => v.color === activeVariant?.color && v.attributes?.Storage === storage);
-                      const isSelected = activeVariant?.attributes?.Storage === storage;
-                      return (
-                        <button
-                          key={storage}
-                          disabled={!match}
-                          onClick={() => match && selectVariant(match)}
-                          className={`px-4 py-2 text-sm font-medium rounded-md border transition-all ${!match ? "opacity-40 cursor-not-allowed bg-muted" : isSelected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-input hover:border-foreground/50"}`}
-                        >
-                          {storage}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+              {rating && (
+                <span className="flex items-center gap-1">
+                  <Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" />
+                  <strong className="text-foreground">{Number(rating.average).toFixed(1)}</strong>
+                  ({rating.count} review{rating.count === 1 ? "" : "s"})
+                </span>
               )}
             </div>
-          )}
-
-          {/* Qty + Add to Cart */}
-          <div className="flex gap-4 mb-8">
-            <div className="flex w-32 border rounded-md overflow-hidden">
-              <button
-                onClick={() => setQty((q) => Math.max(1, q - 1))}
-                disabled={outOfStock || effectiveQty <= 1}
-                className="flex-1 hover:bg-muted font-bold text-lg disabled:opacity-40 disabled:pointer-events-none"
-              >
-                −
-              </button>
-              <div className="flex-1 flex items-center justify-center font-medium border-x">{effectiveQty}</div>
-              <button
-                onClick={() => setQty((q) => Math.min(available, q + 1))}
-                disabled={outOfStock || effectiveQty >= available}
-                className="flex-1 hover:bg-muted font-bold text-lg disabled:opacity-40 disabled:pointer-events-none"
-              >
-                +
-              </button>
-            </div>
-            <Button size="lg" className="flex-1 text-base font-semibold" onClick={handleAddToCart} disabled={outOfStock}>
-              {outOfStock ? (
-                "Out of Stock"
-              ) : added ? (
-                <><Check className="mr-2 h-5 w-5" /> Added!</>
-              ) : (
-                <><ShoppingCart className="mr-2 h-5 w-5" /> Add to Cart</>
-              )}
-            </Button>
-            <WishlistButton productId={product.id} />
-          </div>
-
-          {/* Trust badges */}
-          <div className="grid grid-cols-2 gap-3 text-sm text-muted-foreground bg-secondary/30 p-4 rounded-xl">
-            <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary shrink-0" /> 1 Year Warranty</div>
-            <div className="flex items-center gap-2"><Truck className="h-4 w-4 text-primary shrink-0" /> Free Delivery</div>
-            <div className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-primary shrink-0" /> 7-Day Return</div>
-            <div className="flex items-center gap-2"><Check className="h-4 w-4 text-primary shrink-0" /> 100% Genuine</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Details section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 pt-12 border-t">
-        <div className="lg:col-span-2 space-y-12">
-          {product.key_features?.length > 0 && (
-            <div>
-              <h2 className="text-2xl font-bold mb-6">Key Features</h2>
-              <ul className="space-y-3">
-                {product.key_features.map((f, i) => (
-                  <li key={i} className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-primary mt-0.5 shrink-0" />
-                    <span className="text-base">{f}</span>
+            {product.short_description && <p className="leading-relaxed text-muted-foreground">{product.short_description}</p>}
+            {highlights.length > 0 && (
+              <ul className="flex flex-wrap gap-1.5" aria-label="Key specs">
+                {highlights.map((h, i) => (
+                  <li key={i} className="rounded-lg bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground" title={h.label}>
+                    {h.label ? <span className="font-bold text-foreground">{h.label}: </span> : null}{h.value}
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
-          {description && (
-            <div>
-              <h2 className="text-2xl font-bold mb-4">Overview</h2>
-              <p className="text-muted-foreground leading-relaxed">{description}</p>
-            </div>
-          )}
-        </div>
-
-        {product.specifications?.length > 0 && (
-          <div>
-            <div className="sticky top-24 bg-background rounded-xl border p-6 shadow-sm">
-              <h2 className="text-xl font-bold mb-5">Tech Specs</h2>
-              <div className="divide-y text-sm">
-                {product.specifications.map((spec, i) => (
-                  <div key={i} className="grid grid-cols-3 py-3 gap-3">
-                    <span className="text-muted-foreground font-medium">{spec.key}</span>
-                    <span className="col-span-2">{spec.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            )}
           </div>
-        )}
+
+          {/* Price */}
+          <div>
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="font-display text-[32px] font-extrabold leading-none sm:text-4xl">{formatBDT(price)}</span>
+              {onSale && <span className="text-base text-muted-foreground line-through">{formatBDT(compareAt)}</span>}
+              {onSale && pct >= 1 && <span className={`${chip} bg-coral text-coral-foreground`}>{pct}% off</span>}
+            </div>
+            {onSale && <p className="mt-1.5 text-sm font-semibold text-success">You save {formatBDT(compareAt - price)}</p>}
+            {saleEnds && (
+              <div className="mt-3 flex items-center gap-2 text-sm">
+                <Zap className="h-4 w-4 fill-coral text-coral" aria-hidden="true" />
+                <Countdown endsAt={saleEnds} />
+              </div>
+            )}
+          </div>
+
+          {/* Variant picker */}
+          {variants.length > 1 && (
+            <fieldset className="border-0 p-0">
+              <legend className="mb-2.5 text-sm font-bold">
+                Option: <span className="font-medium text-muted-foreground">{activeVariant?.variant_name || activeVariant?.color}</span>
+              </legend>
+              <div className="flex flex-wrap gap-2.5" role="radiogroup" aria-label="Choose an option">
+                {variants.map((v) => {
+                  const on = v.id === activeVariant?.id;
+                  const sold = Number(v.available ?? 0) <= 0;
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => selectVariant(v)}
+                      className={`flex min-h-12 flex-col items-start justify-center rounded-2xl border-2 px-4 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${on ? "border-navy bg-navy text-navy-foreground dark:border-primary dark:bg-primary dark:text-primary-foreground" : "border-border hover:border-primary/60"} ${sold && !on ? "opacity-60" : ""}`}
+                    >
+                      <span className="font-bold">{v.variant_name || v.color || v.sku}</span>
+                      <span className={`text-xs ${on ? "opacity-85" : "text-muted-foreground"}`}>{sold ? "Out of stock" : formatBDT(v.price)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+          )}
+
+          {/* Stock + branches */}
+          <div className="rounded-2xl border border-border bg-card p-4 text-sm">
+            <p className="font-bold">
+              {outOfStock ? (
+                <span className="text-destructive">Out of stock</span>
+              ) : lowStock ? (
+                <span className="text-destructive">Only {available} left</span>
+              ) : (
+                <span className="text-success">In stock</span>
+              )}
+            </p>
+            {branches.length > 0 && (
+              <div className="mt-2 flex items-start gap-2.5">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                <div>
+                  {inBranches.length > 0 ? (
+                    <p><strong>Available at {inBranches.map((b) => b.branch_name).join(" / ")}</strong></p>
+                  ) : (
+                    <p className="text-muted-foreground">Not on the shelf at either branch right now.</p>
+                  )}
+                  {inBranches.length > 0 && (
+                    <p className="text-muted-foreground">
+                      Visit us at {inBranches.map((b) => SITE.branches.find((s) => s.name === b.branch_name)?.street ? `${b.branch_name}, ${SITE.branches.find((s) => s.name === b.branch_name).street}` : b.branch_name).join(" or ")}.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Purchase */}
+          <div ref={ctaRef} className="flex flex-col gap-3">
+            <div className="flex gap-3">
+              <div className="flex h-12 shrink-0 items-center overflow-hidden rounded-full border-[1.5px] border-foreground/25" role="group" aria-label="Quantity">
+                <button type="button" aria-label="Decrease quantity" onClick={() => setQty((q) => Math.max(1, q - 1))} disabled={outOfStock || effectiveQty <= 1} className={qtyBtn}><Minus className="h-4 w-4" /></button>
+                <span className="w-8 text-center font-bold" aria-live="polite">{effectiveQty}</span>
+                <button type="button" aria-label="Increase quantity" onClick={() => setQty((q) => Math.min(available, q + 1))} disabled={outOfStock || effectiveQty >= available} className={qtyBtn}><Plus className="h-4 w-4" /></button>
+              </div>
+              <Button size="lg" variant="navy" className="flex-1 dark:bg-primary dark:text-primary-foreground" onClick={handleAdd} disabled={outOfStock}>
+                {outOfStock ? "Out of stock" : added ? <><Check className="h-5 w-5" /> Added</> : <><ShoppingCart className="h-5 w-5" /> Add to cart</>}
+              </Button>
+              <div className="hidden sm:block [&>button]:h-12 [&>button]:w-12 [&>button]:px-0"><WishlistButton productId={product.id} /></div>
+            </div>
+            <Button size="lg" variant="coral" onClick={handleBuyNow} disabled={outOfStock}>Buy now</Button>
+            <a href={waHref} target="_blank" rel="noopener noreferrer" className={buttonClass({ variant: "outline", size: "lg", className: "border-[#1FA855] text-[#177A3E] hover:bg-[#1FA855]/10 hover:border-[#1FA855] dark:text-[#4CD07F]" })}>
+              <CatMascot size={36} className="-my-1 mr-1" />
+              Ask on WhatsApp about this item
+            </a>
+          </div>
+
+          {/* Trust */}
+          <ul className="grid gap-2.5 rounded-2xl bg-tint p-4 text-sm sm:grid-cols-2">
+            {warranty && <li className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" /> {warranty.charAt(0).toUpperCase() + warranty.slice(1)}</li>}
+            <li className="flex items-center gap-2"><Truck className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" /> {deliveryFrom ? `Delivery from ${formatBDT(deliveryFrom)}` : "Delivery across Bangladesh"}</li>
+            {codEnabled && <li className="flex items-center gap-2"><Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" /> Cash on delivery</li>}
+            {!isUsed && <li className="flex items-center gap-2"><Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" /> Sealed, brand new</li>}
+          </ul>
+
+          {isUsed && conditionReport}
+        </div>
+      </div>
+
+      {/* Details */}
+      <div className="mt-10 sm:mt-14">
+        <ProductTabs
+          tabs={[
+            {
+              id: "overview",
+              label: "Overview",
+              content: (product.key_features?.length > 0 || overview) ? (
+                <div className="grid gap-8 lg:max-w-4xl">
+                  {product.key_features?.length > 0 && (
+                    <section>
+                      <h2 className="mb-4 font-display text-xl font-extrabold">Key features</h2>
+                      <ul className="grid gap-3 sm:grid-cols-2">
+                        {product.key_features.map((f, i) => (
+                          <li key={i} className="flex items-start gap-3 rounded-2xl bg-tint p-4 text-sm">
+                            <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                            <span>{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+                  {overview && (
+                    <section>
+                      <h2 className="mb-3 font-display text-xl font-extrabold">About this item</h2>
+                      <div className="leading-relaxed [&_a]:text-primary [&_a]:underline [&_h2]:mt-4 [&_h2]:font-display [&_h2]:text-lg [&_h2]:font-bold [&_h3]:mt-3 [&_h3]:font-bold [&_li]:ml-5 [&_li]:list-disc [&_ol_li]:list-decimal [&_p]:mb-3 [&_ul]:mb-3">{overview}</div>
+                    </section>
+                  )}
+                </div>
+              ) : null,
+            },
+            { id: "specs", label: "Specs", content: specs ? <div className="lg:max-w-3xl">{specs}</div> : null },
+            {
+              id: "delivery",
+              label: "Delivery & warranty",
+              content: (
+                <div className="grid gap-4">
+                  {(warranty || product.warranty_notes) && (
+                    <section className="rounded-2xl border border-border bg-card p-5">
+                      <h3 className="mb-2 flex items-center gap-2 font-display text-base font-bold"><ShieldCheck className="h-5 w-5 text-primary" aria-hidden="true" /> Warranty</h3>
+                      {warranty && <p className="text-sm font-semibold">{warranty.charAt(0).toUpperCase() + warranty.slice(1)}</p>}
+                      {product.warranty_notes && <p className="mt-1 text-sm text-muted-foreground">{product.warranty_notes}</p>}
+                    </section>
+                  )}
+                  {delivery}
+                </div>
+              ),
+            },
+          ]}
+        />
+      </div>
+
+      {related}
+
+      {/* Mobile sticky purchase bar */}
+      <div
+        className={`fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-float backdrop-blur transition-transform duration-200 lg:hidden ${barVisible ? "translate-y-0" : "translate-y-full"}`}
+        aria-hidden={!barVisible}
+      >
+        <div className="mx-auto flex max-w-xl items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs text-muted-foreground">{product.name}</p>
+            <p className="font-display text-lg font-extrabold leading-tight">{formatBDT(price)}</p>
+          </div>
+          <Button variant="navy" className="dark:bg-primary dark:text-primary-foreground" onClick={handleAdd} disabled={outOfStock} tabIndex={barVisible ? 0 : -1}>
+            {added ? <Check className="h-5 w-5" /> : <ShoppingCart className="h-5 w-5" />} {outOfStock ? "Out of stock" : added ? "Added" : "Add"}
+          </Button>
+          <Button variant="coral" onClick={handleBuyNow} disabled={outOfStock} tabIndex={barVisible ? 0 : -1}>Buy now</Button>
+        </div>
       </div>
     </div>
   );

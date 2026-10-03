@@ -19,6 +19,7 @@ export default function AddToCartButton({
   variant = "default",
   size = "default",
   label = "Add to Cart",
+  iconOnly = false,
 }) {
   const dispatch = useDispatch();
   const router = useRouter();
@@ -45,6 +46,22 @@ export default function AddToCartButton({
       setState("idle");
     }
   };
+
+  if (iconOnly) {
+    return (
+      <Button
+        className={className}
+        variant={variant}
+        size={size}
+        onClick={onClick}
+        type="button"
+        disabled={state === "loading"}
+        aria-label={state === "added" ? `${product.name} added to cart` : state === "oos" ? "Out of stock" : `Add ${product.name} to cart`}
+      >
+        {state === "loading" ? <Loader2 className="h-5 w-5 animate-spin" /> : state === "added" ? <Check className="h-5 w-5" /> : <ShoppingCart className="h-5 w-5" />}
+      </Button>
+    );
+  }
 
   return (
     <Button className={className} variant={variant} size={size} onClick={onClick} type="button" disabled={state === "loading"}>

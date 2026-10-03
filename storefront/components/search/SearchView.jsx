@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, SlidersHorizontal, X, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { Search, X, Loader2 } from "lucide-react";
+import CatEmpty from "@/components/ui/CatEmpty";
 import ProductCard from "@/components/product/ProductCard";
 import { useDebounce } from "@/hooks/useDebounce";
 import { searchProducts } from "@/lib/api/products";
@@ -29,7 +29,6 @@ export default function SearchView({ initialQuery = "", initialResults = [] }) {
   const [loading, setLoading] = useState(false);
   const [sort, setSort] = useState("relevance");
   const [conditionFilter, setConditionFilter] = useState("all");
-  const [showFilters, setShowFilters] = useState(false);
 
   const debouncedQuery = useDebounce(localQuery, 400);
   const lastFetched = useRef(initialQuery);
@@ -77,101 +76,74 @@ export default function SearchView({ initialQuery = "", initialResults = [] }) {
   }, [results, conditionFilter, sort]);
 
   const clearSearch = () => setLocalQuery("");
+  const pill = (on) =>
+    `h-9 rounded-full border-[1.5px] px-4 text-sm font-bold transition-colors ${on ? "border-primary bg-primary text-primary-foreground" : "border-foreground/25 hover:bg-accent"}`;
 
   return (
-    <div className="container py-8 px-4">
-      {/* Search bar */}
-      <div className="mb-6">
-        <div className="relative max-w-2xl">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-          <input
-            type="search"
-            value={localQuery}
-            onChange={(e) => setLocalQuery(e.target.value)}
-            placeholder="Search products, brands..."
-            autoFocus
-            className="w-full h-12 pl-10 pr-10 rounded-lg border border-input bg-background text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          />
-          {localQuery && (
-            <button
-              onClick={clearSearch}
-              aria-label="Clear search"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
+    <div className="container py-5 sm:py-8">
+      <h1 className="text-display mb-4">Search</h1>
+      <div className="relative mb-5 max-w-2xl">
+        <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <input
+          type="search"
+          value={localQuery}
+          onChange={(e) => setLocalQuery(e.target.value)}
+          placeholder="Search laptops, brands, accessories..."
+          aria-label="Search products"
+          autoFocus
+          className="h-12 w-full rounded-full border-[1.5px] border-input bg-card pl-12 pr-12 text-base shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        {localQuery && (
+          <button type="button" onClick={clearSearch} aria-label="Clear search" className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
-      <div className="flex items-center justify-between mb-4 gap-4">
-        <p className="text-sm text-muted-foreground flex items-center gap-2">
-          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
+          {loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
           {query ? (
-            <>
-              <span className="font-semibold text-foreground">{filtered.length}</span> results for &ldquo;{query}&rdquo;
-            </>
+            <span><strong className="text-foreground">{filtered.length}</strong> results for &ldquo;{query}&rdquo;</span>
           ) : (
             "Type at least 2 characters to search"
           )}
         </p>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="md:hidden">
-            <SlidersHorizontal className="h-4 w-4 mr-2" />
-            Filters
-          </Button>
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value)}
-            className="text-sm border border-input rounded-md px-3 py-1.5 bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+        <div className="flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="Condition" className="flex gap-1.5">
+            {[["all", "All"], ["New", "New"], ["Pre-Owned", "Pre-owned"]].map(([v, label]) => (
+              <button key={v} type="button" aria-pressed={conditionFilter === v} onClick={() => setConditionFilter(v)} className={pill(conditionFilter === v)}>{label}</button>
             ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="flex gap-8">
-        {/* Sidebar filters */}
-        <aside className={`w-52 shrink-0 space-y-6 ${showFilters ? "block" : "hidden md:block"}`}>
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Condition</h3>
-            <div className="space-y-2">
-              {["all", "New", "Pre-Owned"].map((c) => (
-                <label key={c} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="condition"
-                    value={c}
-                    checked={conditionFilter === c}
-                    onChange={() => setConditionFilter(c)}
-                    className="accent-primary"
-                  />
-                  {c === "all" ? "All" : c}
-                </label>
-              ))}
-            </div>
           </div>
-        </aside>
-
-        {/* Results grid */}
-        <div className="flex-1 min-w-0">
-          {query && filtered.length === 0 && !loading ? (
-            <div className="text-center py-20">
-              <Search className="h-12 w-12 text-muted-foreground/40 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-1">No results found</h3>
-              <p className="text-muted-foreground text-sm">Try a different search term or remove filters.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-              {filtered.map((product) => (
-                <ProductCard key={product.id} product={product} action="add" />
-              ))}
-            </div>
-          )}
+          <label className="flex items-center gap-2 text-sm">
+            <span className="sr-only">Sort by</span>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value)}
+              className="h-9 rounded-full border-[1.5px] border-foreground/25 bg-background px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
         </div>
       </div>
+
+      {query && filtered.length === 0 && !loading ? (
+        <CatEmpty
+          title="No results found"
+          text="Check the spelling, try a shorter term like a brand or model, or remove the condition filter."
+          action={{ href: "/products", label: "Browse all products" }}
+          secondary={{ href: "/products?condition=used", label: "See used laptops" }}
+        />
+      ) : !query ? (
+        <CatEmpty title="What are you looking for?" text="Try a brand like HP or Dell, a model like MacBook Air, or a category like charger." />
+      ) : (
+        <ul className="grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">
+          {filtered.map((product) => (
+            <li key={product.id}><ProductCard product={product} /></li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
