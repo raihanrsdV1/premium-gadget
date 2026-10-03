@@ -1,177 +1,134 @@
 import React, { useState } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { logout } from '../../store/slices/authSlice';
 import {
-  LayoutDashboard, Users, Package, ShoppingCart, Wrench,
-  LogOut, MonitorPlay, Tag, BarChart3, GitBranch, Menu, X,
+  LayoutDashboard, Users, Package, ShoppingCart, Wrench, LogOut, MonitorPlay, Tag, Boxes,
+  GitBranch, Menu, X, Settings as SettingsIcon, FlaskConical, FolderTree, BadgeCheck, GalleryHorizontal, Layers, History,
 } from 'lucide-react';
+import { logout } from '../../store/slices/authSlice';
+import { apiSlice } from '../../store/api/apiSlice';
+import { LIVE_PATHS } from '../../config/livePages';
+import { BrandLogo } from '../admin/BrandLogo';
 
-// Navigation items with role restrictions
-// roles: undefined = all admin roles, otherwise array of allowed roles
-const ALL_NAV = [
-  { name: 'Dashboard',    href: '/admin',            icon: LayoutDashboard, roles: undefined },
-  { name: 'Products',     href: '/admin/products',   icon: Package,         roles: ['super_admin'] },
-  { name: 'Orders',       href: '/admin/orders',     icon: ShoppingCart,    roles: undefined },
-  { name: 'Repairs',      href: '/admin/repairs',    icon: Wrench,          roles: undefined },
-  { name: 'Customers',    href: '/admin/customers',  icon: Users,           roles: ['super_admin'] },
-  { name: 'Inventory',    href: '/admin/inventory',  icon: BarChart3,       roles: undefined },
-  { name: 'Branches',     href: '/admin/branches',   icon: GitBranch,       roles: ['super_admin'] },
-  { name: 'Coupons',      href: '/admin/coupons',    icon: Tag,             roles: ['super_admin'] },
-  { name: 'POS Terminal', href: '/admin/pos',        icon: MonitorPlay,     roles: undefined },
+// Sidebar groups. `roles` limits an item to those roles (the API enforces the
+// same rules; hiding just keeps the menu honest).
+const NAV = [
+  { group: null, items: [{ name: 'Dashboard', href: '/admin', icon: LayoutDashboard, end: true }] },
+  { group: 'Sales', items: [
+    { name: 'Orders', href: '/admin/orders', icon: ShoppingCart },
+    { name: 'POS (in-store sale)', href: '/admin/pos', icon: MonitorPlay },
+  ] },
+  { group: 'Catalog', items: [
+    { name: 'Products', href: '/admin/products', icon: Package },
+    { name: 'Categories', href: '/admin/categories', icon: FolderTree },
+    { name: 'Brands', href: '/admin/brands', icon: BadgeCheck },
+    { name: 'Homepage banners', href: '/admin/banners', icon: GalleryHorizontal },
+    { name: 'Collections', href: '/admin/collections', icon: Layers },
+  ] },
+  { group: 'Stock & service', items: [
+    { name: 'Inventory', href: '/admin/inventory', icon: Boxes },
+    { name: 'Repairs', href: '/admin/repairs', icon: Wrench },
+  ] },
+  { group: 'Setup', items: [
+    { name: 'Customers & staff', href: '/admin/customers', icon: Users, roles: ['super_admin'] },
+    { name: 'Branches', href: '/admin/branches', icon: GitBranch, roles: ['super_admin'] },
+    { name: 'Coupons', href: '/admin/coupons', icon: Tag, roles: ['super_admin'] },
+    { name: 'Activity log', href: '/admin/activity', icon: History, roles: ['super_admin'] },
+    { name: 'Settings', href: '/admin/settings', icon: SettingsIcon },
+  ] },
 ];
 
-const ROLE_LABEL = {
-  super_admin:  { text: 'Super Admin',  badge: 'bg-red-100 text-red-700' },
-  branch_admin: { text: 'Branch Admin', badge: 'bg-amber-100 text-amber-700' },
-};
+const ROLE_LABEL = { super_admin: 'Super admin', branch_admin: 'Branch staff' };
+
+const SidebarContent = ({ role, user, onNavigate, onLogout }) => (
+  <div className="flex h-full flex-col">
+    <div className="flex h-16 shrink-0 items-center border-b px-4">
+      <Link to="/admin" onClick={onNavigate} aria-label="Premium Gadget dashboard"><BrandLogo size="sm" /></Link>
+    </div>
+    <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4" aria-label="Admin">
+      {NAV.map((section) => {
+        const items = section.items.filter((i) => !i.roles || i.roles.includes(role));
+        if (!items.length) return null;
+        return (
+          <div key={section.group || 'top'}>
+            {section.group && <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{section.group}</p>}
+            <div className="space-y-0.5">
+              {items.map((item) => (
+                <NavLink key={item.href} to={item.href} end={item.end} onClick={onNavigate}
+                  className={({ isActive }) => `group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                    isActive ? 'bg-primary text-primary-foreground' : 'text-slate-700 hover:bg-slate-100'}`}>
+                  {({ isActive }) => (<><item.icon className={`h-4 w-4 shrink-0 ${isActive ? '' : 'text-slate-400 group-hover:text-slate-600'}`} />{item.name}</>)}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </nav>
+    <div className="shrink-0 space-y-1 border-t p-4">
+      <div className="flex items-center gap-3 px-2 py-1">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+          {(user?.full_name || 'A').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-slate-900">{user?.full_name || 'Staff'}</p>
+          <p className="truncate text-xs text-slate-500">{ROLE_LABEL[role] || role}</p>
+        </div>
+      </div>
+      <button onClick={onLogout} className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50">
+        <LogOut className="h-4 w-4" /> Sign out
+      </button>
+    </div>
+  </div>
+);
 
 const AdminLayout = () => {
   const location = useLocation();
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  const { user } = useSelector(state => state.auth);
-  const role = user?.role || 'branch_admin';
-  const roleInfo = ROLE_LABEL[role] || ROLE_LABEL.branch_admin;
-  const initials = user?.full_name
-    ? user.full_name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
-    : 'A';
-
-  const navigation = ALL_NAV.filter(item =>
-    !item.roles || item.roles.includes(role)
-  );
+  const [open, setOpen] = useState(false);
+  const { user } = useSelector((s) => s.auth);
+  const role = user?.role;
 
   const handleLogout = () => {
     dispatch(logout());
-    navigate('/');
+    dispatch(apiSlice.util.resetApiState()); // shared shop PCs: drop cached data
+    navigate('/login');
   };
 
-  const NavLinks = ({ onNavigate }) => (
-    <nav className="px-3 space-y-0.5">
-      {navigation.map((item) => {
-        const isActive = item.href === '/admin'
-          ? location.pathname === '/admin'
-          : location.pathname.startsWith(item.href);
-        return (
-          <Link
-            key={item.name}
-            to={item.href}
-            onClick={onNavigate}
-            className={`group flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-              isActive
-                ? 'bg-primary text-primary-foreground'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <item.icon className={`shrink-0 h-4 w-4 ${isActive ? 'text-primary-foreground' : 'text-slate-400 group-hover:text-slate-500'}`} />
-            {item.name}
-          </Link>
-        );
-      })}
-    </nav>
-  );
-
-  const SidebarContent = ({ onNavigate }) => (
-    <div className="flex flex-col h-full">
-      {/* Logo */}
-      <div className="h-16 flex items-center gap-2 px-5 border-b shrink-0">
-        <Link to="/" className="font-bold text-xl text-primary">Premium Gadget</Link>
-        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${roleInfo.badge}`}>
-          {role === 'super_admin' ? 'SUPER' : 'BRANCH'}
-        </span>
-      </div>
-
-      {/* Nav */}
-      <div className="flex-1 overflow-y-auto py-4">
-        <NavLinks onNavigate={onNavigate} />
-      </div>
-
-      {/* User footer */}
-      <div className="p-4 border-t shrink-0 space-y-1">
-        <div className="flex items-center gap-3 px-3 py-2 mb-1">
-          <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold shrink-0">
-            {initials}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold truncate text-slate-900 dark:text-white">
-              {user?.full_name || 'Admin'}
-            </p>
-            <p className={`text-xs font-medium ${roleInfo.badge.split(' ')[1]} truncate`}>
-              {roleInfo.text}
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-        >
-          <LogOut className="h-4 w-4 text-red-500 shrink-0" />
-          Logout
-        </button>
-      </div>
-    </div>
-  );
+  const current = NAV.flatMap((s) => s.items).find((i) => (i.end ? location.pathname === i.href : location.pathname.startsWith(i.href)));
+  const isLive = LIVE_PATHS.some((p) => location.pathname.startsWith(p));
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
-
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-64 bg-white dark:bg-slate-950 border-r flex-col shrink-0">
-        <SidebarContent />
+    <div className="flex h-screen bg-slate-50">
+      <aside className="hidden w-64 shrink-0 flex-col border-r bg-white md:flex">
+        <SidebarContent role={role} user={user} onLogout={handleLogout} />
       </aside>
 
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
+      {open && (
         <div className="fixed inset-0 z-40 md:hidden">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
-          <aside className="absolute left-0 top-0 h-full w-64 bg-white dark:bg-slate-950 border-r z-50">
-            <SidebarContent onNavigate={() => setSidebarOpen(false)} />
+          <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
+          <aside className="absolute left-0 top-0 z-50 h-full w-64 border-r bg-white">
+            <SidebarContent role={role} user={user} onNavigate={() => setOpen(false)} onLogout={handleLogout} />
           </aside>
         </div>
       )}
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {/* Top bar */}
-        <header className="h-16 flex items-center justify-between px-4 md:px-6 border-b bg-white dark:bg-slate-950 shrink-0 gap-4">
-          <div className="flex items-center gap-3">
-            {/* Mobile hamburger */}
-            <button
-              className="md:hidden p-1.5 rounded-md hover:bg-slate-100"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            {/* Breadcrumb label on desktop */}
-            <span className="hidden md:block text-sm text-slate-500">
-              {navigation.find(n =>
-                n.href === '/admin'
-                  ? location.pathname === '/admin'
-                  : location.pathname.startsWith(n.href)
-              )?.name || 'Admin'}
-            </span>
-          </div>
-
-          {/* Right: user info */}
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-semibold text-slate-900 dark:text-white leading-tight">
-                {user?.full_name || 'Admin'}
-              </p>
-              <p className={`text-xs font-medium ${roleInfo.badge.split(' ')[1]}`}>
-                {roleInfo.text}
-              </p>
-            </div>
-            <div className="h-9 w-9 bg-primary/10 text-primary rounded-full flex items-center justify-center font-bold text-sm shrink-0">
-              {initials}
-            </div>
-          </div>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-white px-4 md:px-6">
+          <button className="rounded-md p-1.5 hover:bg-slate-100 md:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+          <span className="text-sm font-medium text-slate-500">{current?.name || 'Admin'}</span>
         </header>
 
-        {/* Page content */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
+          {!isLive && (
+            <div className="mb-6 flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <FlaskConical className="mt-0.5 h-5 w-5 shrink-0" />
+              <p><b>Preview only.</b> This page still shows sample data and isn&apos;t connected to the shop&apos;s database yet — changes here are not saved.</p>
+            </div>
+          )}
           <Outlet />
         </div>
       </main>

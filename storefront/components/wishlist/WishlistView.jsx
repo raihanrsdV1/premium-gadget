@@ -4,9 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useDispatch } from "react-redux";
-import { Heart, ShoppingCart, Trash2, ArrowRight, Loader2, AlertCircle } from "lucide-react";
+import { ShoppingCart, Trash2, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
+import CatEmpty from "@/components/ui/CatEmpty";
+import Img from "@/components/ui/Img";
+import { formatBDT } from "@/lib/seo";
+
+const FALLBACK = "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&q=80&w=400";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { addProductToCart } from "@/lib/cart";
 import { getWishlist, removeFromWishlist } from "@/lib/api/wishlist";
@@ -54,81 +59,79 @@ export default function WishlistView() {
 
   if (!ready || loading) {
     return (
-      <div className="container px-4 py-24 flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="container py-24 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" aria-label="Loading" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="container px-4 py-24 flex flex-col items-center justify-center text-center">
-        <AlertCircle className="h-10 w-10 text-destructive mb-4" />
-        <p className="text-muted-foreground">{error}</p>
+      <div className="container max-w-2xl py-10 sm:py-16">
+        <CatEmpty title="We couldn't load your wishlist" text={error} action={{ href: "/products", label: "Browse products" }} />
       </div>
     );
   }
 
   if (items.length === 0) {
     return (
-      <div className="container py-24 text-center max-w-md mx-auto px-4">
-        <Heart className="h-16 w-16 text-muted-foreground/40 mx-auto mb-6" />
-        <h2 className="text-2xl font-semibold mb-2">Your wishlist is empty</h2>
-        <p className="text-muted-foreground mb-8">Browse our products and save your favorites here.</p>
-        <Link href="/products">
-          <Button size="lg">Browse Products <ArrowRight className="ml-2 h-4 w-4" /></Button>
-        </Link>
+      <div className="container max-w-2xl py-10 sm:py-16">
+        <CatEmpty title="Your wishlist is empty" text="Tap the heart on any product to save it here for later." action={{ href: "/products", label: "Browse products" }} />
       </div>
     );
   }
 
   return (
-    <div className="container py-10 px-4">
-      <div className="flex items-center justify-between mb-8">
+    <div className="container py-5 sm:py-10">
+      <div className="mb-6 flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">My Wishlist</h1>
-          <p className="text-muted-foreground mt-1">{items.length} saved item{items.length !== 1 ? "s" : ""}</p>
+          <h1 className="text-display">My wishlist</h1>
+          <p className="mt-1 text-muted-foreground">{items.length} saved item{items.length !== 1 ? "s" : ""}</p>
         </div>
-        <Link href="/products" className="text-sm text-primary hover:underline font-medium hidden sm:block">
-          Continue Shopping <ArrowRight className="inline h-4 w-4" />
+        <Link href="/products" className="hidden text-sm font-bold text-primary hover:underline sm:block">
+          Continue shopping <ArrowRight className="inline h-4 w-4" />
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-        {items.map((item) => (
-          <Card key={item.id} className="group overflow-hidden">
-            <div className="relative aspect-square overflow-hidden bg-white p-4">
-              <img
-                src={item.image || "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&q=80&w=400"}
-                alt={item.name}
-                className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
-              />
-              <span className={`absolute top-3 left-3 text-xs font-semibold px-2 py-1 rounded-full ${item.condition === "New" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-                {item.condition}
-              </span>
-              <button
-                onClick={() => handleRemove(item.product_id)}
-                className="absolute top-3 right-3 p-1.5 rounded-full bg-white/80 hover:bg-white text-rose-500 transition-colors shadow"
-                aria-label="Remove from wishlist"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-            <CardContent className="p-4">
-              {item.brand && <p className="text-xs text-muted-foreground mb-1">{item.brand}</p>}
-              <Link href={`/products/${item.slug}`}>
-                <h3 className="font-semibold leading-tight hover:text-primary transition-colors line-clamp-2 mb-2 text-sm">
-                  {item.name}
-                </h3>
-              </Link>
-              <p className="text-lg font-bold text-primary mb-4">৳{Number(item.price).toLocaleString()}</p>
-              <Button className="w-full" size="sm" onClick={() => handleAddToCart(item)}>
-                <ShoppingCart className="mr-2 h-4 w-4" /> Add to Cart
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <ul className="grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">
+        {items.map((item) => {
+          const isNew = String(item.condition).toLowerCase() === "new";
+          return (
+            <li key={item.id}>
+              <Card className="group flex h-full flex-col overflow-hidden">
+                <div className="relative aspect-[4/3] overflow-hidden bg-white dark:bg-[#EEF2FF]">
+                  <Link href={`/products/${item.slug}`} className="absolute inset-0" aria-label={item.name} tabIndex={-1}>
+                    <Img src={item.image || FALLBACK} alt="" fill sizes="(min-width: 1024px) 22vw, 46vw" className="object-cover object-center transition-transform duration-300 motion-safe:group-hover:scale-[1.04]" />
+                  </Link>
+                  {item.condition && (
+                    <span className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${isNew ? "bg-success text-success-foreground" : "bg-warning text-warning-foreground"}`}>
+                      {item.condition}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(item.product_id)}
+                    className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-white text-rose-600 shadow-card hover:bg-rose-50"
+                    aria-label={`Remove ${item.name} from wishlist`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <CardContent className="flex flex-1 flex-col p-3 sm:p-4">
+                  {item.brand && <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{item.brand}</p>}
+                  <Link href={`/products/${item.slug}`}>
+                    <h2 className="mb-2 line-clamp-2 font-display text-sm font-bold leading-snug hover:text-primary">{item.name}</h2>
+                  </Link>
+                  <p className="mb-4 mt-auto font-display text-lg font-extrabold">{formatBDT(item.price)}</p>
+                  <Button className="w-full" size="sm" variant="navy" onClick={() => handleAddToCart(item)}>
+                    <ShoppingCart className="h-4 w-4" /> Add to cart
+                  </Button>
+                </CardContent>
+              </Card>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

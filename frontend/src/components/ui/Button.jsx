@@ -25,14 +25,13 @@ const buttonVariants = {
   },
 }
 
-const Button = React.forwardRef(({ className, variant = "default", size = "default", asChild = false, ...props }, ref) => {
-  const Comp = asChild ? React.Fragment : "button"
+const Button = React.forwardRef(({ className, variant = "default", size = "default", ...props }, ref) => {
   return (
-    <Comp
+    <button
       className={cn(
         buttonVariants.base,
-        buttonVariants.variants[variant],
-        buttonVariants.sizes?.[size] || buttonVariants.variants.size?.[size],
+        buttonVariants.variants.variant[variant],
+        buttonVariants.variants.size[size],
         className
       )}
       ref={ref}
@@ -42,4 +41,4 @@ const Button = React.forwardRef(({ className, variant = "default", size = "defau
 })
 Button.displayName = "Button"
 
-export { Button, buttonVariants }
+export { Button }

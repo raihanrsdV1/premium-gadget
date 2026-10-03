@@ -46,44 +46,47 @@ export default function RepairTrackingView() {
   const isCancelled = ticket?.status === "cancelled";
 
   return (
-    <div className="container py-12 px-4 max-w-2xl mx-auto">
+    <div className="container max-w-2xl py-6 sm:py-12">
       <div className="text-center mb-10">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Track Your Repair</h1>
+        <h1 className="text-display mb-2">Track your repair</h1>
         <p className="text-muted-foreground">Enter your ticket number and registered phone to see real-time status.</p>
       </div>
 
       <Card className="mb-8">
-        <CardContent className="p-6">
+        <CardContent className="p-5 sm:p-6">
           <form onSubmit={handleTrack} className="space-y-4">
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Ticket Number</label>
+              <label htmlFor="trk-ticket" className="text-sm font-bold mb-1.5 block">Ticket number</label>
               <input
+                id="trk-ticket"
                 required
                 value={ticketNumber}
                 onChange={(e) => setTicketNumber(e.target.value)}
                 placeholder="e.g. RPR-1234"
-                className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                className="h-11 w-full rounded-xl border border-input bg-background px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Registered Phone</label>
+              <label htmlFor="trk-phone" className="text-sm font-bold mb-1.5 block">Registered phone</label>
               <input
+                id="trk-phone"
                 required
+                autoComplete="tel"
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="017XXXXXXXX"
-                className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                className="h-11 w-full rounded-xl border border-input bg-background px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-              Track Status
+            <Button type="submit" size="lg" className="w-full" disabled={loading}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              Track status
             </Button>
           </form>
 
           {error && (
-            <div className="mt-4 flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-md px-3 py-2">
+            <div role="alert" className="mt-4 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0" />
               {error}
             </div>
@@ -97,7 +100,7 @@ export default function RepairTrackingView() {
           {!isCancelled && (
             <Card>
               <CardContent className="p-6">
-                <h2 className="font-semibold text-lg mb-6">Repair Progress</h2>
+                <h2 className="font-display font-bold text-lg mb-6">Repair progress</h2>
                 <div className="relative">
                   <div className="absolute top-4 left-4 right-4 h-0.5 bg-muted" />
                   <div
@@ -113,7 +116,7 @@ export default function RepairTrackingView() {
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 z-10 transition-colors ${done ? "bg-primary border-primary text-primary-foreground" : "bg-background border-muted-foreground/30 text-muted-foreground"} ${active ? "ring-2 ring-primary ring-offset-2" : ""}`}>
                             {done ? <CheckCircle className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
                           </div>
-                          <span className={`text-xs font-medium text-center ${done ? "text-primary" : "text-muted-foreground"}`}>{step}</span>
+                          <span className={`text-[11px] sm:text-xs font-bold text-center ${done ? "text-primary" : "text-muted-foreground"}`}>{step}</span>
                         </div>
                       );
                     })}
@@ -128,12 +131,12 @@ export default function RepairTrackingView() {
             <CardContent className="p-6">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h2 className="font-semibold text-lg">{ticket.ticket_number}</h2>
+                  <h2 className="font-display font-bold text-lg">{ticket.ticket_number}</h2>
                   <p className="text-sm text-muted-foreground">
                     Received: {ticket.received_at ? new Date(ticket.received_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}
                   </p>
                 </div>
-                <span className={`text-xs font-semibold px-3 py-1 rounded-full capitalize ${isCancelled ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}>
+                <span className={`text-xs font-bold px-3 py-1.5 rounded-full capitalize ${isCancelled ? "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300" : "bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-300"}`}>
                   {ticket.status?.replace("_", " ")}
                 </span>
               </div>
@@ -160,7 +163,7 @@ export default function RepairTrackingView() {
                   </div>
                 </div>
                 {ticket.diagnosis_notes && (
-                  <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-3 mt-3">
+                  <div className="bg-tint rounded-xl p-3 mt-3">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Technician Notes</p>
                     <p className="text-sm">{ticket.diagnosis_notes}</p>
                   </div>

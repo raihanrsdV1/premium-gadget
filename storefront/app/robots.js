@@ -1,15 +1,30 @@
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+import { SITE_URL } from "@/lib/seo";
 
-// Allow all crawlers, including AI/LLM crawlers explicitly so the storefront
-// is indexable by search engines and answer engines alike.
+// Personal / transactional pages and the API stay out of every index.
+const DISALLOW = ["/cart", "/checkout", "/orders", "/order-success", "/login", "/register", "/wishlist", "/api/"];
+
+// AI / answer-engine crawlers are welcome — named explicitly because a bot
+// that matches its own group ignores the "*" group, so each group repeats the
+// disallow list.
+const AI_BOTS = [
+  "GPTBot",
+  "OAI-SearchBot",
+  "ChatGPT-User",
+  "ClaudeBot",
+  "Claude-SearchBot",
+  "Claude-User",
+  "PerplexityBot",
+  "Perplexity-User",
+  "Google-Extended",
+  "CCBot",
+  "Applebot-Extended",
+];
+
 export default function robots() {
   return {
     rules: [
-      { userAgent: "*", allow: "/" },
-      { userAgent: "GPTBot", allow: "/" },
-      { userAgent: "ClaudeBot", allow: "/" },
-      { userAgent: "PerplexityBot", allow: "/" },
-      { userAgent: "Google-Extended", allow: "/" },
+      { userAgent: "*", allow: "/", disallow: DISALLOW },
+      { userAgent: AI_BOTS, allow: "/", disallow: DISALLOW },
     ],
     sitemap: `${SITE_URL}/sitemap.xml`,
   };

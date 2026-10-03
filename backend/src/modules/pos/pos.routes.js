@@ -1,20 +1,25 @@
 const { Router } = require('express');
 const controller = require('./pos.controller');
-const { createPOSSaleSchema, validate } = require('./pos.validation');
-const { authenticate, authorize, requirePhoneVerified } = require('../auth/auth.middleware');
+const { authenticate, authorize, requireStaff } = require('../auth/auth.middleware');
+const { validate } = require('../../middleware/validate');
+const { idParams } = require('../../utils/validators');
+const {
+  createSaleSchema, listSalesQuerySchema, voidSaleSchema, catalogQuerySchema,
+} = require('./pos.validation');
 
 const router = Router();
 
-// All POS routes are admin-only
-router.use(authenticate, authorize('super_admin', 'branch_admin'));
+// All POS routes are staff-only; branch scoping happens in the service.
+router.use(authenticate, requireStaff);
 
-// Create a walk-in sale
-router.post('/sales', validate(createPOSSaleSchema), controller.createSale);
+// Counter product lookup (SKU / barcode first, then name).
+router.get('/catalog', validate(catalogQuerySchema, 'query'), controller.catalog);
 
-// List POS sales
-router.get('/sales', controller.getSales);
+router.post('/sales', validate(createSaleSchema), controller.createSale);
+router.get('/sales', validate(listSalesQuerySchema, 'query'), controller.getSales);
+router.get('/sales/:id', validate(idParams, 'params'), controller.getSaleById);
 
-// Get sale details
-router.get('/sales/:id', controller.getSaleById);
+// Voiding reverses money and stock: super_admin only.
+router.post('/sales/:id/void', authorize('super_admin'), validate(idParams, 'params'), validate(voidSaleSchema), controller.voidSale);
 
 module.exports = router;

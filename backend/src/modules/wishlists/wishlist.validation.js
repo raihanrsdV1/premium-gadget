@@ -1,7 +1,7 @@
-const { z } = require('zod');
+const { z, uuid } = require('../../utils/validators');
 
 const addToWishlistSchema = z.object({
-  product_id: z.string().uuid(),
+  product_id: uuid,
 });
 
 /**

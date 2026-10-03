@@ -1,15 +1,18 @@
 import Link from "next/link";
 import {
   Clock, Cpu, Monitor, Battery, HardDrive, Wifi, Wrench,
-  ChevronRight, Phone, MapPin, ArrowRight,
+  Phone, MapPin, ArrowRight,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
+import Image from "next/image";
+import { buttonClass } from "@/components/ui/Button";
 import BookRepairCTA from "@/components/repair/BookRepairCTA";
+import JsonLd from "@/components/seo/JsonLd";
+import { SITE, postalAddressJsonLd } from "@/lib/site";
+import { SITE_URL, formatBDT, pageMetadata } from "@/lib/seo";
+import { getRepairServices } from "@/lib/api/server";
+import CatMascot from "@/components/ui/CatMascot";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-
-const SERVICES = [
+const FALLBACK_SERVICES = [
   { icon: Monitor, title: "Screen Replacement", description: "Cracked or dead screen? We replace displays for MacBook, Dell, HP, Lenovo and more.", price: "From ৳3,500", turnaround: "1–2 days" },
   { icon: Battery, title: "Battery Replacement", description: "Restore full battery capacity with genuine or high-quality replacement cells.", price: "From ৳2,000", turnaround: "Same day" },
   { icon: HardDrive, title: "SSD / RAM Upgrade", description: "Speed up your laptop with a fast NVMe SSD or expanded RAM.", price: "From ৳500", turnaround: "Same day" },
@@ -25,42 +28,29 @@ const PROCESS_STEPS = [
   { step: "04", title: "Collect", desc: "Pick up your repaired device or get it delivered to your door." },
 ];
 
-export const metadata = {
-  title: "Laptop & Gadget Repair in Dhaka",
+export const metadata = pageMetadata({
+  title: "Laptop & Gadget Repair in Chattogram",
   description:
-    "Expert laptop, MacBook and gadget repair in Dhaka, Bangladesh — screen replacement, battery service, motherboard micro-soldering. Genuine parts, 90-day warranty.",
-};
+    "Expert laptop, MacBook and gadget repair in Chattogram, Bangladesh — screen replacement, battery service, motherboard micro-soldering. Genuine parts, 90-day warranty.",
+  path: "/repairs",
+});
 
 const localBusinessJsonLd = {
   "@context": "https://schema.org",
   "@type": "LocalBusiness",
   name: "Premium Gadget — Repair Center",
-  image: `${SITE_URL}/og-repair.jpg`,
   url: `${SITE_URL}/repairs`,
-  telephone: "+880-1700-000000",
+  telephone: SITE.phoneE164,
   priceRange: "৳৳",
-  address: {
-    "@type": "PostalAddress",
-    streetAddress: "Level 4, Multiplan Center, New Elephant Road",
-    addressLocality: "Dhaka",
-    postalCode: "1205",
-    addressCountry: "BD",
-  },
-  geo: { "@type": "GeoCoordinates", latitude: 23.7461, longitude: 90.3742 },
-  openingHoursSpecification: {
-    "@type": "OpeningHoursSpecification",
-    dayOfWeek: ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday"],
-    opens: "10:00",
-    closes: "20:00",
-  },
+  address: postalAddressJsonLd,
 };
 
-const serviceJsonLd = {
+const serviceJsonLd = (SERVICES) => ({
   "@context": "https://schema.org",
   "@type": "Service",
   serviceType: "Laptop & Gadget Repair",
   provider: { "@type": "LocalBusiness", name: "Premium Gadget — Repair Center", url: `${SITE_URL}/repairs` },
-  areaServed: { "@type": "City", name: "Dhaka" },
+  areaServed: { "@type": "City", name: "Chattogram" },
   hasOfferCatalog: {
     "@type": "OfferCatalog",
     name: "Repair Services",
@@ -69,123 +59,119 @@ const serviceJsonLd = {
       itemOffered: { "@type": "Service", name: s.title, description: s.description },
     })),
   },
-};
+});
 
-export default function RepairServicesPage() {
+const ICONS = [Monitor, Battery, HardDrive, Cpu, Wifi, Wrench];
+
+export default async function RepairServicesPage() {
+  const live = await getRepairServices();
+  const services = live
+    ? live.map((s) => ({ title: s.name, description: s.description, price: Number(s.base_price) > 0 ? `From ${formatBDT(s.base_price)}` : null }))
+    : FALLBACK_SERVICES;
+
   return (
-    <div className="px-4">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessJsonLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceJsonLd) }} />
+    <div>
+      <JsonLd data={localBusinessJsonLd} />
+      <JsonLd data={serviceJsonLd(services)} />
 
       {/* Hero */}
-      <section className="bg-gradient-to-br from-slate-900 to-slate-800 text-white py-20 px-4 -mx-4 mb-16">
-        <div className="container text-center max-w-3xl mx-auto">
-          <span className="inline-block bg-primary/20 text-primary-foreground text-sm font-semibold px-3 py-1 rounded-full mb-4">
-            Certified Repair Center
-          </span>
-          <h1 className="text-4xl md:text-5xl font-bold mb-5 tracking-tight">Expert Gadget Repair</h1>
-          <p className="text-slate-300 text-lg mb-8 max-w-xl mx-auto">
-            From screen replacements to complex motherboard micro-soldering, our certified technicians bring your devices back to life.
-          </p>
-          <div className="flex flex-wrap gap-3 justify-center">
-            <BookRepairCTA size="lg" label="Book a Repair" />
-            <Link href="/repairs/track">
-              <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10">
-                Track My Repair
-              </Button>
-            </Link>
+      <section className="container">
+        <div className="relative overflow-hidden rounded-3xl bg-navy px-5 py-10 text-navy-foreground sm:px-12 sm:py-16">
+          <div className="relative z-10 max-w-xl">
+            <span className="mb-4 inline-block rounded-full bg-white/12 px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#C9D3F5]">Repair center</span>
+            <h1 className="text-display mb-4 text-white">Expert laptop and gadget repair</h1>
+            <p className="mb-7 text-[#DCE3FA] sm:text-lg">
+              From screen replacements to motherboard micro-soldering, our technicians bring your devices back to life.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <BookRepairCTA size="lg" variant="coral" label="Book a repair" />
+              <Link href="/repairs/track" className={buttonClass({ variant: "ghost", size: "lg", className: "border-[1.5px] border-white/55 text-white hover:bg-white/10" })}>
+                Track my repair
+              </Link>
+            </div>
           </div>
+          <CatMascot size={280} className="pointer-events-none absolute bottom-4 right-4 hidden md:inline-flex lg:right-14" />
         </div>
       </section>
 
       {/* Services grid */}
-      <section className="container mb-20">
-        <div className="text-center mb-10">
-          <h2 className="text-3xl font-bold mb-2">Our Services</h2>
-          <p className="text-muted-foreground">Transparent pricing, genuine parts, 90-day warranty on all repairs.</p>
+      <section className="container mt-12 sm:mt-16" aria-labelledby="svc-h">
+        <div className="mb-6 sm:mb-8">
+          <h2 id="svc-h" className="text-title">Our services</h2>
+          <p className="mt-1 text-muted-foreground">Prices shown are starting prices; we confirm the quote after diagnosis.</p>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {SERVICES.map((svc) => (
-            <Card key={svc.title} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-6">
-                <div className="w-12 h-12 bg-primary/10 text-primary rounded-xl flex items-center justify-center mb-4">
-                  <svc.icon className="h-6 w-6" />
+        <ul className="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
+          {services.map((svc, i) => {
+            const Icon = svc.icon || ICONS[i % ICONS.length];
+            return (
+              <li key={svc.title} className="flex flex-col rounded-2xl border border-border bg-card p-5 shadow-card transition-shadow hover:shadow-pop sm:p-6">
+                <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-tint text-primary">
+                  <Icon className="h-6 w-6" aria-hidden="true" />
+                </span>
+                <h3 className="mb-2 font-display text-lg font-bold">{svc.title}</h3>
+                {svc.description && <p className="mb-4 text-sm leading-relaxed text-muted-foreground">{svc.description}</p>}
+                <div className="mt-auto flex items-center justify-between text-sm">
+                  {svc.price && <span className="font-display font-extrabold text-primary">{svc.price}</span>}
+                  {svc.turnaround && (
+                    <span className="flex items-center gap-1 text-muted-foreground"><Clock className="h-3.5 w-3.5" aria-hidden="true" /> {svc.turnaround}</span>
+                  )}
                 </div>
-                <h3 className="font-bold text-lg mb-2">{svc.title}</h3>
-                <p className="text-muted-foreground text-sm mb-4 leading-relaxed">{svc.description}</p>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-primary">{svc.price}</span>
-                  <span className="text-muted-foreground flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5" /> {svc.turnaround}
-                  </span>
-                </div>
-                <BookRepairCTA variant="outline" size="sm" className="w-full mt-4" label="Book Now" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                <BookRepairCTA variant="outline" size="sm" className="mt-4 w-full" label="Book now" />
+              </li>
+            );
+          })}
+        </ul>
       </section>
 
       {/* How it works */}
-      <section className="container mb-20">
-        <div className="text-center mb-10">
-          <h2 className="text-3xl font-bold mb-2">How It Works</h2>
-          <p className="text-muted-foreground">Simple, transparent process from drop-off to pick-up.</p>
-        </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {PROCESS_STEPS.map((step, i) => (
-            <div key={step.step} className="relative text-center">
-              {i < PROCESS_STEPS.length - 1 && (
-                <ChevronRight className="hidden lg:block absolute -right-3 top-6 h-6 w-6 text-muted-foreground/40 z-10" />
-              )}
-              <div className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-bold mx-auto mb-3">
-                {step.step}
-              </div>
-              <h3 className="font-semibold mb-1">{step.title}</h3>
-              <p className="text-muted-foreground text-sm">{step.desc}</p>
-            </div>
+      <section className="container mt-12 sm:mt-16" aria-labelledby="how-h">
+        <h2 id="how-h" className="text-title mb-6 sm:mb-8">How it works</h2>
+        <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {PROCESS_STEPS.map((step) => (
+            <li key={step.step} className="rounded-2xl bg-tint p-5">
+              <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-navy font-display text-lg font-extrabold text-navy-foreground dark:bg-primary dark:text-primary-foreground">{step.step}</span>
+              <h3 className="mb-1 font-display font-bold">{step.title}</h3>
+              <p className="text-sm text-muted-foreground">{step.desc}</p>
+            </li>
           ))}
-        </div>
+        </ol>
       </section>
 
       {/* Track repair CTA */}
-      <section className="container mb-20">
-        <div className="bg-slate-900 dark:bg-slate-950 rounded-2xl p-8 md:p-12 text-white flex flex-col md:flex-row items-center justify-between gap-6">
+      <section className="container mt-12 sm:mt-16">
+        <div className="flex flex-col items-start justify-between gap-5 rounded-3xl bg-navy p-6 text-navy-foreground sm:p-10 md:flex-row md:items-center">
           <div>
-            <h3 className="text-2xl font-bold mb-2">Already dropped off your device?</h3>
-            <p className="text-slate-300">Track your repair status in real time with your ticket number.</p>
+            <h2 className="mb-1 font-display text-2xl font-extrabold text-white">Already dropped off your device?</h2>
+            <p className="text-[#DCE3FA]">Check your repair status with your ticket number.</p>
           </div>
-          <Link href="/repairs/track">
-            <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10 whitespace-nowrap">
-              Track Repair Status <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
+          <Link href="/repairs/track" className={buttonClass({ variant: "coral", size: "lg", className: "shrink-0" })}>
+            Track repair status <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
         </div>
       </section>
 
       {/* Contact info */}
-      <section className="container mb-20">
-        <div className="grid sm:grid-cols-2 gap-6 max-w-2xl mx-auto">
-          <Card className="p-5">
-            <CardContent className="p-0 flex items-start gap-4">
-              <Phone className="h-6 w-6 text-primary shrink-0 mt-0.5" />
-              <div>
-                <h4 className="font-semibold mb-1">Call Us</h4>
-                <p className="text-muted-foreground text-sm">01700-000000</p>
-                <p className="text-muted-foreground text-sm">Sat–Thu, 10am–8pm</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="p-5">
-            <CardContent className="p-0 flex items-start gap-4">
-              <MapPin className="h-6 w-6 text-primary shrink-0 mt-0.5" />
-              <div>
-                <h4 className="font-semibold mb-1">Visit Us</h4>
-                <p className="text-muted-foreground text-sm">Level 4, Multiplan Center</p>
-                <p className="text-muted-foreground text-sm">New Elephant Road, Dhaka</p>
-              </div>
-            </CardContent>
-          </Card>
+      <section className="container mt-12 sm:mt-16" aria-label="Contact">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex items-start gap-4 rounded-2xl border border-border bg-card p-5">
+            <Phone className="mt-0.5 h-6 w-6 shrink-0 text-primary" aria-hidden="true" />
+            <div>
+              <h3 className="mb-1 font-display font-bold">Call us</h3>
+              <a href={`tel:${SITE.phoneE164}`} className="text-sm font-semibold hover:text-primary">{SITE.phoneDisplay}</a>
+              <p className="text-sm text-muted-foreground">Call or WhatsApp</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-4 rounded-2xl border border-border bg-card p-5">
+            <MapPin className="mt-0.5 h-6 w-6 shrink-0 text-primary" aria-hidden="true" />
+            <div>
+              <h3 className="mb-1 font-display font-bold">Visit us</h3>
+              {SITE.branches.map((b) => (
+                <p key={b.name} className="text-sm text-muted-foreground">
+                  <span className="font-semibold text-foreground">{b.name}:</span> {b.street}, {b.locality}
+                </p>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
     </div>

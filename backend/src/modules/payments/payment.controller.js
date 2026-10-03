@@ -2,49 +2,95 @@ const asyncHandler = require('../../utils/asyncHandler');
 const config = require('../../config');
 const paymentService = require('./payment.service');
 
-const STOREFRONT = config.urls.storefront;
-
-const initiatePayment = asyncHandler(async (req, res) => {
-  const result = await paymentService.initiatePayment(req.body, req.user);
-  res.json({ success: true, data: result });
-});
+const { OUTCOME } = paymentService;
 
 /**
- * SSL Commerz IPN — called by SSL Commerz servers, not the user's browser.
+ * Storefront checkout page with a status and, if the caller sent one, the
+ * order reference it sent (format-validated). The reference is echoed the
+ * same way whether or not such an order exists, so the unauthenticated
+ * callbacks can't be used to probe order numbers.
  */
-const handleIPN = asyncHandler(async (req, res) => {
-  await paymentService.processIPN(req.body);
-  res.status(200).json({ success: true });
-});
+const checkoutPage = (status, clientRef) =>
+  `${config.urls.storefront}/checkout?payment=${status}${clientRef ? `&ref=${encodeURIComponent(clientRef)}` : ''}`;
 
 /**
- * Success callback (browser POST-redirect). Validates server-side, confirms the
- * order, then redirects the user to the storefront confirmation page. On any
- * validation failure the reservation is released and the user is sent to a
- * failure page.
+ * Where to send the browser after the gateway's success redirect. The
+ * order-success page is shown ONLY for an order confirmed by a verified
+ * payment (its number comes from the gateway's own record).
+ *
+ * @param {{ outcome: string, ref?: string }} result
+ * @param {string|undefined} clientRef - tran_id from the callback body
  */
-const handleSuccess = asyncHandler(async (req, res) => {
-  try {
-    const result = await paymentService.handleSuccess(req.body);
-    return res.redirect(`${STOREFRONT}/order-success?ref=${encodeURIComponent(result.order_number)}`);
-  } catch (err) {
-    return res.redirect(`${STOREFRONT}/checkout?payment=failed`);
+const successRedirect = (result, clientRef) => {
+  switch (result.outcome) {
+    case OUTCOME.SUCCESS:
+      return `${config.urls.storefront}/order-success?ref=${encodeURIComponent(result.ref)}`;
+    case OUTCOME.HELD:
+    case OUTCOME.PENDING:
+      return checkoutPage('pending', clientRef);
+    default:
+      return checkoutPage('failed', clientRef);
   }
-});
+};
 
-const handleFail = asyncHandler(async (req, res) => {
-  await paymentService.handleFailure(req.body, 'failed');
-  res.redirect(`${STOREFRONT}/checkout?payment=failed`);
-});
+/**
+ * success_url (browser POST-redirect from the gateway). On an unexpected
+ * error nothing was changed, so the customer sees "pending", not "failed".
+ */
+const handleSuccess = async (req, res) => {
+  let result;
+  try {
+    result = await paymentService.handleValidatedCallback(req.validatedBody, 'success');
+  } catch (err) {
+    console.error('❌ payment success callback error:', err);
+    result = { outcome: OUTCOME.PENDING };
+  }
+  res.redirect(303, successRedirect(result, req.validatedBody.tran_id));
+};
 
-const handleCancel = asyncHandler(async (req, res) => {
-  await paymentService.handleFailure(req.body, 'cancelled');
-  res.redirect(`${STOREFRONT}/checkout?payment=cancelled`);
-});
+/**
+ * fail_url / cancel_url: settle with the gateway, then always the same
+ * redirect for the same input, whatever the order's state (or existence).
+ */
+const returnHandler = (reason) => async (req, res) => {
+  try {
+    await paymentService.handleGatewayReturn(req.validatedBody, reason);
+  } catch (err) {
+    console.error(`❌ payment ${reason} callback error:`, err);
+  }
+  res.redirect(303, checkoutPage(reason, req.validatedBody.tran_id));
+};
 
-const validateTransaction = asyncHandler(async (req, res) => {
-  const result = await paymentService.validateTransaction(req.params.transactionId);
+/**
+ * IPN — called by SSLCommerz servers, not the user's browser. The response
+ * is constant so it reveals nothing about orders; anything left undecided
+ * (e.g. the gateway was unreachable) is settled by the expiry job.
+ */
+const handleIPN = async (req, res) => {
+  try {
+    await paymentService.handleIpn(req.validatedBody);
+  } catch (err) {
+    console.error('❌ payment IPN error:', err);
+  }
+  res.json({ success: true });
+};
+
+const retryPayment = asyncHandler(async (req, res) => {
+  const result = await paymentService.retryPayment(req.validatedParams.orderNumber, req.user);
   res.json({ success: true, data: result });
 });
 
-module.exports = { initiatePayment, handleIPN, handleSuccess, handleFail, handleCancel, validateTransaction };
+const reconcile = asyncHandler(async (req, res) => {
+  const result = await paymentService.reconcileForStaff(req.validatedParams.orderId, req.user);
+  res.json({ success: true, data: result });
+});
+
+module.exports = {
+  successRedirect,
+  handleSuccess,
+  handleFail: returnHandler('failed'),
+  handleCancel: returnHandler('cancelled'),
+  handleIPN,
+  retryPayment,
+  reconcile,
+};
